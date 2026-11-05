@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the exported control journal is shareable (2b.1). -->
+<paths>
+    <cache-path name="diagnostics" path="diagnostics-export/" />
+</paths>

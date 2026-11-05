@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="design_catalog_app_name">Nookast Design Catalog</string>
+    <string name="design_catalog_title">Design Catalog</string>
+    <string name="design_catalog_empty">The catalog infrastructure is ready. The first Now Playing review scene has not been added yet.</string>
+    <string name="design_catalog_profile">Profile: %1$s</string>
+    <string name="design_catalog_theme">Theme: %1$s</string>
+    <string name="design_catalog_locale">Language: %1$s</string>
+    <string name="design_catalog_text_scale">Text: %1$s</string>
+    <string name="design_catalog_open">Open full screen</string>
+    <string name="design_catalog_draft">Draft</string>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="design_catalog_app_name">Нукаст — каталог дизайна</string>
+    <string name="design_catalog_title">Каталог дизайна</string>
+    <string name="design_catalog_empty">Инфраструктура каталога готова. Первый контрольный экран Now Playing пока не добавлен.</string>
+    <string name="design_catalog_profile">Профиль: %1$s</string>
+    <string name="design_catalog_theme">Тема: %1$s</string>
+    <string name="design_catalog_locale">Язык: %1$s</string>
+    <string name="design_catalog_text_scale">Текст: %1$s</string>
+    <string name="design_catalog_open">Открыть на весь экран</string>
+    <string name="design_catalog_draft">Черновик</string>
+</resources>

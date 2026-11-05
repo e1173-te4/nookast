@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "default_profile": {
+    "id": "standard",
+    "controller_packages": [],
+    "legacy_browser": true,
+    "map_previous_next_to_seek": false,
+    "source_name_metadata_key": null
+  },
+  "profiles": [
+    {
+      "id": "jaecoo_j7",
+      "controller_packages": [],
+      "legacy_browser": true,
+      "map_previous_next_to_seek": true,
+      "source_name_metadata_key": null
+    }
+  ]
+}

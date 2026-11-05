@@ -1,0 +1,20 @@
+# Build output
+build/
+**/build/
+.gradle/
+.kotlin/
+captures/
+*.hprof
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Signing: the release workflow writes the key here, it is never committed
+.secrets/
+*.jks
+*.keystore
+keystore.properties

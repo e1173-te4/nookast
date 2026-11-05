@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem / Уязвимость
+    url: https://github.com/e1173-te4/nookast/security/advisories/new
+    about: Report it privately, not in an issue. / Сообщите закрыто, не в issue.
+  - name: PinePods server problem / Проблема сервера PinePods
+    url: https://github.com/madeofpendletonwool/PinePods/issues
+    about: Problems of the server itself belong to PinePods. / Проблемы самого сервера — в PinePods.
