@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+            Debug-only design catalog. No launcher icon: the user wants a single icon that starts
+            the app (25.10.2026). Open it with
+            adb shell am start -n ru.e1173.nookast.debug/ru.e1173.nookast.designcatalog.DesignCatalogActivity
+        -->
+        <activity
+            android:name=".designcatalog.DesignCatalogActivity"
+            android:exported="true"
+            android:label="@string/design_catalog_app_name"
+            android:theme="@style/Theme.PinePodsClient" />
+    </application>
+</manifest>

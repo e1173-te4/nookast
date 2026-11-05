@@ -1,0 +1,72 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+max_line_length = 100
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+
+[*.{xml,json,yml,yaml,toml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{ps1,bat}]
+end_of_line = crlf
+
+# ktlint (plan 8.5): the formatter keeps the code as it is written here — spacing, indentation,
+# imports and blank lines — and leaves line wrapping and naming to review.
+[*.{kt,kts}]
+ktlint_code_style = intellij_idea
+ktlint_function_naming_ignore_when_annotated_with = Composable
+ktlint_standard_max-line-length = disabled
+ktlint_standard_filename = disabled
+ktlint_standard_property-naming = disabled
+ktlint_standard_backing-property-naming = disabled
+ktlint_standard_function-naming = disabled
+ktlint_standard_multiline-expression-wrapping = disabled
+ktlint_standard_string-template-indent = disabled
+ktlint_standard_chain-method-continuation = disabled
+ktlint_standard_function-signature = disabled
+ktlint_standard_class-signature = disabled
+ktlint_standard_function-expression-body = disabled
+ktlint_standard_if-else-wrapping = disabled
+ktlint_standard_if-else-bracing = disabled
+ktlint_standard_blank-line-before-declaration = disabled
+ktlint_standard_statement-wrapping = disabled
+ktlint_standard_wrapping = disabled
+ktlint_standard_argument-list-wrapping = disabled
+ktlint_standard_parameter-list-wrapping = disabled
+ktlint_standard_kdoc = disabled
+ktlint_standard_condition-wrapping = disabled
+ktlint_standard_function-literal = disabled
+ktlint_standard_comment-wrapping = disabled
+ktlint_standard_discouraged-comment-location = disabled
+ktlint_standard_value-argument-comment = disabled
+ktlint_standard_value-parameter-comment = disabled
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+ktlint_standard_annotation = disabled
+ktlint_standard_mixed-condition-operators = disabled
+ktlint_standard_binary-expression-wrapping = disabled
+ktlint_standard_no-wildcard-imports = disabled
+ktlint_standard_import-ordering = disabled
+ktlint_standard_property-wrapping = disabled
+ktlint_standard_parameter-wrapping = disabled
+ktlint_standard_function-type-modifier-spacing = disabled
+ktlint_standard_no-consecutive-comments = disabled
+ktlint_standard_enum-wrapping = disabled
+ktlint_standard_context-receiver-wrapping = disabled
+ktlint_standard_type-argument-list-spacing = disabled
+ktlint_standard_indent = disabled
+ktlint_standard_multiline-if-else = disabled
+ktlint_standard_multiline-loop = disabled
+ktlint_standard_blank-line-between-when-conditions = disabled

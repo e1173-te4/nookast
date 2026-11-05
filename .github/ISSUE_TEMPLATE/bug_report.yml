@@ -1,0 +1,37 @@
+name: Bug report / Ошибка
+description: Something in Nookast does not work as expected. / Что-то в Nookast работает не так.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues are public. Do not post your server address, login, password, API key, or a log
+        or screenshot that shows them. / Issue видят все: не публикуйте адрес сервера, логин,
+        пароль, API-ключ и журналы или снимки экрана, где они видны.
+  - type: input
+    id: version
+    attributes:
+      label: Nookast version / Версия Nookast
+      description: Settings → About. / Настройки → О приложении.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version / Устройство и версия Android
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: PinePods server version / Версия сервера PinePods
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected / Что произошло и чего вы ждали
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Как повторить

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Plan 7.2, X-07. Plain HTTP stays allowed: some PinePods servers and many podcast feeds and
+    episode files are only served over HTTP. Signing in over HTTP needs the user's explicit
+    confirmation on the sign-in screen. Only the system's certificate authorities are trusted:
+    no user-installed or self-signed ones (DEC-019).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
