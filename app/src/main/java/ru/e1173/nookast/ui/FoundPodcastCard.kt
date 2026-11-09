@@ -79,6 +79,7 @@ internal fun FoundPodcastCard(
     onAdd: () -> Unit,
     onOpenPodcast: () -> Unit,
     modifier: Modifier = Modifier,
+    failure: ru.e1173.nookast.data.remote.AddFailure? = null,
 ) {
     val colors = LocalNookastColors.current
     val scroll = rememberScrollState()
@@ -170,7 +171,7 @@ internal fun FoundPodcastCard(
             SubscribeCapsule(status, scale, onAdd, onOpenPodcast, Modifier.fillMaxWidth().widthIn(max = 420.dp))
             val note = when (status) {
                 FoundPodcastStatus.ADDED -> stringResource(R.string.search_added)
-                FoundPodcastStatus.FAILED -> stringResource(R.string.search_add_failed)
+                FoundPodcastStatus.FAILED -> stringResource(addFailedText(failure))
                 else -> null
             }
             note?.let {

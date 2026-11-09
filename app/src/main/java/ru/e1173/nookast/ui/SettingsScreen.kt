@@ -82,13 +82,11 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import ru.e1173.nookast.R
 import ru.e1173.nookast.data.remote.QueueLoadError
-import ru.e1173.nookast.player.MediaButtonProfileMode
 import ru.e1173.nookast.player.PlaybackPreferences
 import ru.e1173.nookast.player.PlaybackUiState
 import ru.e1173.nookast.player.QueueInsertionPosition
 import ru.e1173.nookast.player.QueueSwipeAction
 import ru.e1173.nookast.preferences.AppThemeMode
-import ru.e1173.nookast.preferences.InterfaceProfile
 
 private enum class SettingsSection(
     val titleResource: Int,
@@ -113,18 +111,15 @@ internal fun SettingsScreen(
     largeControls: Boolean,
     touchTarget: Dp,
     themeMode: AppThemeMode,
-    interfaceProfile: InterfaceProfile,
     onClose: () -> Unit,
     onRefresh: () -> Unit,
     onRunDiagnostics: () -> Unit,
     onSignOut: () -> Unit,
     onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
     onDownloadWholeEpisodeChanged: (Boolean) -> Unit,
     onAheadCacheChanged: (Int) -> Unit,
     onSeekBackSecondsChanged: (Int) -> Unit,
     onSeekForwardSecondsChanged: (Int) -> Unit,
-    onMediaButtonProfileChanged: (MediaButtonProfileMode) -> Unit,
     onPlaybackStartQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onManualQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onQueueSwipeStartActionChanged: (QueueSwipeAction) -> Unit,
@@ -160,17 +155,14 @@ internal fun SettingsScreen(
             largeControls = largeControls,
             touchTarget = touchTarget,
             themeMode = themeMode,
-            interfaceProfile = interfaceProfile,
             onRefresh = onRefresh,
             onRunDiagnostics = onRunDiagnostics,
             onSignOut = onSignOut,
             onThemeModeChanged = onThemeModeChanged,
-            onInterfaceProfileChanged = onInterfaceProfileChanged,
             onDownloadWholeEpisodeChanged = onDownloadWholeEpisodeChanged,
             onAheadCacheChanged = onAheadCacheChanged,
             onSeekBackSecondsChanged = onSeekBackSecondsChanged,
             onSeekForwardSecondsChanged = onSeekForwardSecondsChanged,
-            onMediaButtonProfileChanged = onMediaButtonProfileChanged,
             onPlaybackStartQueuePositionChanged = onPlaybackStartQueuePositionChanged,
             onManualQueuePositionChanged = onManualQueuePositionChanged,
             onQueueSwipeStartActionChanged = onQueueSwipeStartActionChanged,
@@ -519,17 +511,14 @@ private fun SettingsSectionContent(
     largeControls: Boolean,
     touchTarget: Dp,
     themeMode: AppThemeMode,
-    interfaceProfile: InterfaceProfile,
     onRefresh: () -> Unit,
     onRunDiagnostics: () -> Unit,
     onSignOut: () -> Unit,
     onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
     onDownloadWholeEpisodeChanged: (Boolean) -> Unit,
     onAheadCacheChanged: (Int) -> Unit,
     onSeekBackSecondsChanged: (Int) -> Unit,
     onSeekForwardSecondsChanged: (Int) -> Unit,
-    onMediaButtonProfileChanged: (MediaButtonProfileMode) -> Unit,
     onPlaybackStartQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onManualQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onQueueSwipeStartActionChanged: (QueueSwipeAction) -> Unit,
@@ -567,7 +556,6 @@ private fun SettingsSectionContent(
                 onAheadCacheChanged = onAheadCacheChanged,
                 onSeekBackSecondsChanged = onSeekBackSecondsChanged,
                 onSeekForwardSecondsChanged = onSeekForwardSecondsChanged,
-                onMediaButtonProfileChanged = onMediaButtonProfileChanged,
                 onPlaybackStartQueuePositionChanged =
                     onPlaybackStartQueuePositionChanged,
                 onManualQueuePositionChanged = onManualQueuePositionChanged,
@@ -579,10 +567,8 @@ private fun SettingsSectionContent(
             SettingsSection.APPEARANCE -> {
                 AppearanceSettingsContent(
                     themeMode = themeMode,
-                    interfaceProfile = interfaceProfile,
                     touchTarget = touchTarget,
                     onThemeModeChanged = onThemeModeChanged,
-                    onInterfaceProfileChanged = onInterfaceProfileChanged,
                 )
                 DashboardPlaylistsPanel(queueState.dashboard?.playlists.orEmpty(), touchTarget)
             }
@@ -601,7 +587,7 @@ private fun SettingsSectionContent(
             SettingsSection.DIAGNOSTICS -> ControlJournalPanel(touchTarget = touchTarget)
 
             SettingsSection.ABOUT -> {
-                AboutSettingsContent(serverUrl, interfaceProfile)
+                AboutSettingsContent(serverUrl)
                 UpdateSettingsPanel(touchTarget)
                 LicensesPanel()
             }
@@ -614,7 +600,7 @@ private fun SettingsSectionContent(
  * bug report from the phone, the Fold or the car needs. The server is named by its host only.
  */
 @Composable
-private fun AboutSettingsContent(serverUrl: String, interfaceProfile: InterfaceProfile) {
+private fun AboutSettingsContent(serverUrl: String) {
     val configuration = LocalConfiguration.current
     val rows = listOf(
         R.string.about_delivery to ru.e1173.nookast.BuildConfig.DELIVERY,
@@ -638,7 +624,6 @@ private fun AboutSettingsContent(serverUrl: String, interfaceProfile: InterfaceP
             configuration.screenHeightDp,
             configuration.densityDpi,
         ),
-        R.string.about_profile to stringResource(interfaceProfile.labelResource()),
         R.string.about_server to (runCatching { serverUrl.toUri().host }.getOrNull() ?: "—"),
     )
     SettingsPanel(decorated = true) {
@@ -709,7 +694,6 @@ private fun PlayerSettingsContent(
     onAheadCacheChanged: (Int) -> Unit,
     onSeekBackSecondsChanged: (Int) -> Unit,
     onSeekForwardSecondsChanged: (Int) -> Unit,
-    onMediaButtonProfileChanged: (MediaButtonProfileMode) -> Unit,
     onPlaybackStartQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onManualQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onQueueSwipeStartActionChanged: (QueueSwipeAction) -> Unit,
@@ -839,53 +823,14 @@ private fun PlayerSettingsContent(
         )
     }
 
-    SettingsGroupLabel(
-        titleResource = if (wideLayout) {
-            R.string.settings_offline_and_head_unit
-        } else {
-            R.string.offline_and_cache
-        },
-        modifier = Modifier.padding(top = 14.dp),
+    SettingsGroupLabel(R.string.offline_and_cache, Modifier.padding(top = 14.dp))
+    OfflineSettingsPanel(
+        queueState = queueState,
+        touchTarget = touchTarget,
+        onDownloadWholeEpisodeChanged = onDownloadWholeEpisodeChanged,
+        onAheadCacheChanged = onAheadCacheChanged,
+        onClearAheadCache = onClearAheadCache,
     )
-    if (wideLayout) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            OfflineSettingsPanel(
-                queueState = queueState,
-                touchTarget = touchTarget,
-                onDownloadWholeEpisodeChanged = onDownloadWholeEpisodeChanged,
-                onAheadCacheChanged = onAheadCacheChanged,
-                onClearAheadCache = onClearAheadCache,
-                modifier = Modifier.weight(1f),
-            )
-            MediaButtonSettingsPanel(
-                selected = playerSettings.mediaButtonProfileMode,
-                touchTarget = touchTarget,
-                onSelected = onMediaButtonProfileChanged,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    } else {
-        OfflineSettingsPanel(
-            queueState = queueState,
-            touchTarget = touchTarget,
-            onDownloadWholeEpisodeChanged = onDownloadWholeEpisodeChanged,
-            onAheadCacheChanged = onAheadCacheChanged,
-            onClearAheadCache = onClearAheadCache,
-        )
-        SettingsGroupLabel(
-            titleResource = R.string.settings_head_unit_controls,
-            modifier = Modifier.padding(top = 14.dp),
-        )
-        MediaButtonSettingsPanel(
-            selected = playerSettings.mediaButtonProfileMode,
-            touchTarget = touchTarget,
-            onSelected = onMediaButtonProfileChanged,
-        )
-    }
 }
 
 @Composable
@@ -1024,29 +969,6 @@ private fun OfflineSettingsPanel(
                     },
                 ),
             )
-        }
-    }
-}
-
-@Composable
-private fun MediaButtonSettingsPanel(
-    selected: MediaButtonProfileMode,
-    touchTarget: Dp,
-    onSelected: (MediaButtonProfileMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    SettingsPanel(modifier = modifier, decorated = true) {
-        MediaButtonProfileMode.entries.forEachIndexed { index, mode ->
-            ChoiceRow(
-                title = stringResource(mode.labelResource()),
-                description = stringResource(mode.descriptionResource()),
-                selected = selected == mode,
-                onClick = { onSelected(mode) },
-                touchTarget = touchTarget,
-            )
-            if (index != MediaButtonProfileMode.entries.lastIndex) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            }
         }
     }
 }
@@ -1327,10 +1249,8 @@ private fun ApprovedSliderTrack(state: SliderState) {
 @Composable
 private fun AppearanceSettingsContent(
     themeMode: AppThemeMode,
-    interfaceProfile: InterfaceProfile,
     touchTarget: Dp,
     onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
 ) {
     SettingsGroupLabel(R.string.theme_mode)
     SettingsPanel(decorated = true) {
@@ -1353,25 +1273,6 @@ private fun AppearanceSettingsContent(
         modifier = Modifier.padding(top = 14.dp),
     )
     PalettePanel(touchTarget)
-
-    SettingsGroupLabel(
-        titleResource = R.string.interface_profile,
-        modifier = Modifier.padding(top = 14.dp),
-    )
-    SettingsPanel(decorated = true) {
-        InterfaceProfile.entries.forEachIndexed { index, profile ->
-            ChoiceRow(
-                title = stringResource(profile.labelResource()),
-                description = stringResource(profile.descriptionResource()),
-                selected = interfaceProfile == profile,
-                onClick = { onInterfaceProfileChanged(profile) },
-                touchTarget = touchTarget,
-            )
-            if (index != InterfaceProfile.entries.lastIndex) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            }
-        }
-    }
 
     SettingsGroupLabel(
         titleResource = R.string.feed_title,
@@ -2164,12 +2065,6 @@ private fun formatStorageBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-private fun MediaButtonProfileMode.labelResource(): Int = when (this) {
-    MediaButtonProfileMode.AUTO -> R.string.profile_auto
-    MediaButtonProfileMode.STANDARD -> R.string.profile_standard
-    MediaButtonProfileMode.JAECOO_J7 -> R.string.profile_jaecoo
-}
-
 private fun QueueSwipeAction.labelResource(): Int = when (this) {
     QueueSwipeAction.NONE -> R.string.settings_queue_swipe_none
     QueueSwipeAction.DOWNLOAD_OR_DELETE -> R.string.settings_queue_swipe_download
@@ -2184,12 +2079,6 @@ private fun QueueSwipeAction.descriptionResource(): Int = when (this) {
     QueueSwipeAction.REMOVE_FROM_QUEUE -> R.string.settings_queue_swipe_remove_description
 }
 
-private fun MediaButtonProfileMode.descriptionResource(): Int = when (this) {
-    MediaButtonProfileMode.AUTO -> R.string.settings_media_profile_auto_description
-    MediaButtonProfileMode.STANDARD -> R.string.settings_media_profile_standard_description
-    MediaButtonProfileMode.JAECOO_J7 -> R.string.settings_media_profile_jaecoo_description
-}
-
 private fun AppThemeMode.labelResource(): Int = when (this) {
     AppThemeMode.SYSTEM -> R.string.theme_system
     AppThemeMode.LIGHT -> R.string.theme_light
@@ -2200,20 +2089,6 @@ private fun AppThemeMode.descriptionResource(): Int = when (this) {
     AppThemeMode.SYSTEM -> R.string.settings_theme_system_description
     AppThemeMode.LIGHT -> R.string.settings_theme_light_description
     AppThemeMode.DARK -> R.string.settings_theme_dark_description
-}
-
-private fun InterfaceProfile.labelResource(): Int = when (this) {
-    InterfaceProfile.AUTO -> R.string.interface_auto
-    InterfaceProfile.STANDARD -> R.string.interface_standard
-    InterfaceProfile.LARGE -> R.string.interface_large
-    InterfaceProfile.JAECOO_J7 -> R.string.interface_jaecoo
-}
-
-private fun InterfaceProfile.descriptionResource(): Int = when (this) {
-    InterfaceProfile.AUTO -> R.string.settings_interface_auto_description
-    InterfaceProfile.STANDARD -> R.string.settings_interface_standard_description
-    InterfaceProfile.LARGE -> R.string.settings_interface_large_description
-    InterfaceProfile.JAECOO_J7 -> R.string.settings_interface_jaecoo_description
 }
 
 private fun QueueLoadError.stringResource(): Int = when (this) {

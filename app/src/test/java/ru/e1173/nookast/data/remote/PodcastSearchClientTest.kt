@@ -48,7 +48,7 @@ class PodcastSearchClientTest {
     }
 
     @Test
-    fun `a subscription is found by its feed or, under another link, by its title`() {
+    fun `only the subscribed feed is in the library and the same show under another feed is told apart`() {
         fun sub(id: Int, name: String, feed: String, author: String = "") =
             PodcastSubscriptionEntity(id, name, "", "", null, 0, feed, author, null, "", 0L)
         val lookup = SubscriptionLookup(
@@ -59,8 +59,12 @@ class PodcastSearchClientTest {
         )
 
         assertEquals(1, lookup.find(FoundPodcast("BeardyCast", "", "", "http://cloud.mave.digital/64666/"))?.podcastId)
-        assertEquals(2, lookup.find(FoundPodcast("beardybuilding ", "BeardyCast", "", "https://cloud.mave.digital/44273"))?.podcastId)
-        assertNull(lookup.find(FoundPodcast("BeardyBuilding", "Someone else", "", "https://other.example/feed")))
+        // User, 6.11.2026: followed via the s3mts link, the search finds cloud.mave.digital.
+        val otherLink = FoundPodcast("beardybuilding ", "BeardyCast", "", "https://cloud.mave.digital/44273")
+        assertNull(lookup.find(otherLink))
+        assertEquals(2, lookup.sameShowElsewhere(otherLink)?.podcastId)
+        assertNull(lookup.sameShowElsewhere(FoundPodcast("BeardyBuilding", "Someone else", "", "https://other.example/feed")))
+        assertNull(lookup.sameShowElsewhere(FoundPodcast("BeardyBuilding", "", "", "https://mavecloud.s3mts.ru/storage/feeds/44273.xml")))
         assertNull(lookup.find(FoundPodcast("Батина Консоль", "", "", "https://mavecloud.s3mts.ru/storage/feeds/43674.xml")))
     }
 
@@ -73,8 +77,8 @@ class PodcastSearchClientTest {
         val old = FoundPodcast("Животные в студии", "", "", "https://old.example/feed.xml")
         val results = listOf(old, current)
 
-        assertEquals(1, lookup.find(current, results)?.podcastId)
-        assertNull(lookup.find(old, results))
+        assertEquals(1, lookup.find(current)?.podcastId)
+        assertNull(lookup.find(old))
         assertEquals("old.example", lookup.twinHost(old, results))
         assertNull(lookup.twinHost(current, listOf(current)))
     }

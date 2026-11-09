@@ -99,8 +99,16 @@ class PodcastSearchClient(
             .header("Accept", "application/json")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
-        serverClient.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "add_podcast: ${response.code}" }
+        val response = try {
+            serverClient.newCall(request).execute()
+        } catch (error: java.io.IOException) {
+            throw AddPodcastFailure(AddFailure.NETWORK, error)
+        }
+        response.use {
+            if (it.isSuccessful) return
+            // 502 «External service error»: the server could not fetch or read the feed itself (user,
+            // 9.11.2026: PinePods News, «error decoding response body» while the feed answers fine).
+            throw AddPodcastFailure(if (it.code == 502 || it.code == 504) AddFailure.SERVER_FETCH else AddFailure.REFUSED)
         }
     }
 
@@ -149,3 +157,17 @@ class PodcastSearchClient(
         }.distinctBy(FoundPodcast::feedUrl)
     }
 }
+
+/** Why a podcast could not be added. */
+enum class AddFailure {
+    /** The server could not fetch or read the feed itself; the feed may well work elsewhere. */
+    SERVER_FETCH,
+
+    /** The server refused the feed (not a podcast feed, a duplicate, an error of its own). */
+    REFUSED,
+
+    /** No answer from the server. */
+    NETWORK,
+}
+
+class AddPodcastFailure(val kind: AddFailure, cause: Throwable? = null) : Exception(kind.name, cause)

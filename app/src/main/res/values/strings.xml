@@ -26,7 +26,7 @@
     <string name="device_parameters">Device parameters</string>
     <string name="jaecoo_profile_detected">JAECOO J7 / DesaySV profile detected — controls and text have been enlarged.</string>
     <string name="large_screen_detected">Large portrait screen detected — enlarged controls are enabled.</string>
-    <string name="device_help">These details help tune the interface for the head unit.</string>
+    <string name="device_help">These details help tune the interface to this screen.</string>
     <string name="device">Device</string>
     <string name="android" translatable="false">Android</string>
     <string name="window">Window</string>
@@ -62,6 +62,8 @@
     <string name="search_added">Added: episodes will appear shortly</string>
     <string name="search_in_library">In your podcasts</string>
     <string name="search_add_failed">Could not add: the server did not accept the feed</string>
+    <string name="search_add_failed_server_fetch">The PinePods server could not load this feed. The feed itself may be fine: the server could not read it from its network. Try again later.</string>
+    <string name="search_add_failed_network">No connection to the server. Try again.</string>
     <string name="search_preview_subscribe">Subscribe</string>
     <string name="search_preview_adding">Adding…</string>
     <string name="search_preview_subscribed">Subscribed</string>
@@ -114,26 +116,13 @@
     <string name="offline_and_cache">Offline and cache</string>
     <string name="download_on_playback">Download the full episode when playback starts</string>
     <string name="download_on_playback_help">The episode remains available without a network connection. Playback and the download share a disk cache, so nothing is fetched twice; the rest is filled over Wi-Fi only. Once the file is ready, playback moves to it on a pause or a seek. A day after the episode is played the file is deleted; episodes downloaded by hand stay.</string>
-    <string name="ahead_cache_size">Memory buffer: %1$d MB</string>
-    <string name="cache_restart_note">The cache size is applied the next time the player starts.</string>
     <string name="storage_usage">Streaming cache: %1$s · Offline episodes: %2$s</string>
     <string name="clear_ahead_cache">Clear streaming cache</string>
     <string name="cache_clear_pending">Cache will be cleared after the player restarts</string>
-    <string name="media_button_profile">Head-unit media buttons</string>
-    <string name="profile_auto">Automatic detection</string>
-    <string name="profile_standard">Standard Android behavior</string>
-    <string name="profile_jaecoo">JAECOO J7: Previous/Next seek</string>
-    <string name="appearance_and_layout">Appearance and interface size</string>
-    <string name="appearance_temporary_help">Functional settings. The final Settings layout will follow the separately approved mockup.</string>
     <string name="theme_mode">Theme</string>
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="interface_profile">Interface profile</string>
-    <string name="interface_auto">Automatic</string>
-    <string name="interface_standard">Standard phone</string>
-    <string name="interface_large">Large controls</string>
-    <string name="interface_jaecoo">JAECOO J7 14.8-inch</string>
     <string name="download">Download</string>
     <string name="download_queued">Queued</string>
     <string name="downloading">Loading…</string>
@@ -217,7 +206,7 @@
     <string name="home_title">Home</string>
     <string name="settings_title">Settings</string>
     <string name="settings_player_title">Player and offline</string>
-    <string name="settings_player_description">Seeking, started-episode downloads, streaming cache, and head-unit controls.</string>
+    <string name="settings_player_description">Seeking, started-episode downloads, streaming cache and media buttons.</string>
     <string name="settings_appearance_title">Appearance and display</string>
     <string name="settings_appearance_description">App theme, paired colors, and comfortable interface sizing.</string>
     <string name="settings_server_title">Server</string>
@@ -260,10 +249,6 @@
         <item quantity="one">%1$d sec</item>
         <item quantity="other">%1$d sec</item>
     </plurals>
-    <string name="settings_head_unit_controls">Head-unit controls</string>
-    <string name="settings_media_profile_auto_description">Use automatic detection for the current device.</string>
-    <string name="settings_media_profile_standard_description">Previous and Next keep the standard Android behavior.</string>
-    <string name="settings_media_profile_jaecoo_description">Previous and Next seek within the current episode.</string>
     <string name="settings_theme_system_description">Follow the device day and night mode.</string>
     <string name="settings_theme_light_description">Always use the light appearance.</string>
     <string name="settings_theme_dark_description">Always use the dark appearance.</string>
@@ -274,10 +259,6 @@
     <string name="settings_palette_mint">Mint</string>
     <string name="settings_palette_signature">Signature</string>
     <string name="settings_color_palette_description">App colours for day and night. Type and layout are the same in every theme.</string>
-    <string name="settings_interface_auto_description">Choose the size from the window and device characteristics.</string>
-    <string name="settings_interface_standard_description">Standard element and text sizes.</string>
-    <string name="settings_interface_large_description">Larger touch targets without device model matching.</string>
-    <string name="settings_interface_jaecoo_description">Large controls and text tuned for the JAECOO J7 display.</string>
     <string name="settings_connection">Connection</string>
     <string name="settings_status">Status</string>
     <string name="settings_actions">Actions</string>
@@ -305,15 +286,12 @@
     <string name="settings_sign_out_title">Sign out</string>
     <string name="settings_sign_out_description">You will need to sign in again to reconnect.</string>
     <string name="settings_sign_out_action">Sign out</string>
-    <string name="settings_offline_and_head_unit">OFFLINE AND HEAD UNIT</string>
     <string name="unknown_podcast">Unknown podcast</string>
     <string name="back">Back</string>
     <plurals name="played_episode_count">
         <item quantity="one">%1$d played</item>
         <item quantity="other">%1$d played</item>
     </plurals>
-    <string name="seek_back_setting">Rewind: %1$d sec</string>
-    <string name="seek_forward_setting">Forward: %1$d sec</string>
     <string name="download_episode">Download</string>
     <string name="reorder_episode">Reorder episode</string>
     <string name="podcast_sort_updated">Recently updated</string>
@@ -484,10 +462,10 @@
 
     <!-- Settings → Diagnostics: control journal (2b.1). Provisional screen, restyled in D5. -->
     <string name="settings_diagnostics_title">Diagnostics</string>
-    <string name="settings_diagnostics_section_description">Journal of control commands from the car, steering wheel and headsets.</string>
+    <string name="settings_diagnostics_section_description">Journal of playback control commands from buttons and headsets.</string>
     <string name="settings_about_title">About</string>
     <string name="settings_about_description">Version, build and the device the app runs on.</string>
-    <string name="about_tagline">A PinePods podcast client for the phone, the foldable and the car.</string>
+    <string name="about_tagline">A PinePods podcast client for phones, foldables and tablets.</string>
     <string name="about_delivery">Delivery</string>
     <string name="about_version">Version</string>
     <string name="about_commit">Commit</string>
@@ -518,7 +496,6 @@
     <string name="about_device">Device</string>
     <string name="about_screen">Screen</string>
     <string name="about_screen_value">%1$d × %2$d dp · %3$d dpi</string>
-    <string name="about_profile">Interface profile</string>
     <string name="about_server">PinePods server</string>
     <string name="about_build_debug">debug</string>
     <string name="about_build_release">release</string>
@@ -531,18 +508,17 @@
     <string name="update_mode_automatic">Automatically</string>
     <string name="update_mode_notify">Only tell me</string>
     <string name="update_mode_off">Off</string>
-    <string name="update_mode_automatic_help">Once a day the app looks for a new version, downloads it over Wi-Fi and installs it when the screen is off, nothing is playing or was paused in the last half hour, no car is connected and no episode is downloading. If Android would ask to confirm, the app offers the update when you open it.</string>
-    <string name="update_mode_notify_help">Once a day the app looks for a new version, downloads it over Wi-Fi and lets you know; you install it yourself.</string>
+    <string name="update_mode_automatic_help">Once a day, installs a new version over Wi-Fi while the phone is idle.</string>
+    <string name="update_mode_notify_help">Once a day, looks for a new version and lets you know.</string>
     <string name="update_mode_off_help">The app does not look for new versions by itself. «Check now» still works.</string>
     <string name="update_checking">Checking…</string>
     <string name="update_available">Version %1$s is available</string>
     <string name="update_downloaded">Version %1$s is downloaded and ready to install</string>
-    <string name="update_latest">No updates · checked %1$s</string>
+    <string name="update_latest">You have the latest version · checked %1$s</string>
     <string name="update_never_checked">Not checked yet</string>
     <string name="update_check_now">Check now</string>
     <string name="update_install">Install</string>
     <string name="update_whats_new">What\'s new</string>
-    <string name="update_stops_playback">Installing restarts the app and stops playback. Install now?</string>
     <string name="update_error_network">Could not reach the update server. Try again later.</string>
     <string name="update_error_no_release">No published version was found.</string>
     <string name="update_error_checksum">The downloaded file was damaged and has been deleted.</string>
@@ -557,10 +533,18 @@
     <string name="update_done_title">Updated to %1$s</string>
     <string name="update_done_ok">Good</string>
     <string name="update_downloading">Downloading version %1$s · %2$d %%</string>
-    <string name="update_metered_text">Version %1$s takes %2$s. Download it over mobile data?</string>
-    <string name="update_metered_text_unknown">Download version %1$s over mobile data?</string>
-    <string name="update_download">Download</string>
-    <string name="update_prompt_title">Update %1$s is ready</string>
+    <string name="update_download_install">Download and install</string>
+    <string name="update_permission_manual">Android did not open the permission screen. Allow installs by hand: Android Settings → Apps → Nookast → Install unknown apps, then come back and tap «Check again».</string>
+    <string name="update_check_again">Check again</string>
+    <string name="update_install_other_way">Another way to install</string>
+    <string name="update_save_to_downloads">Save to Downloads</string>
+    <string name="update_saved">File saved: Downloads/%1$s. Open it in a file manager to install.</string>
+    <string name="update_saved_certificate">Nookast certificate (SHA-256): %1$s. Android installs the file only if it carries the same one.</string>
+    <string name="update_save_failed">The file could not be saved on this device.</string>
+    <string name="update_offer_title">Version %1$s is available · %2$s</string>
+    <string name="update_offer_metered">The download goes over mobile data.</string>
+    <string name="update_offer_stops_playback">Installing stops playback and restarts the app.</string>
+    <string name="update_downloading_bytes">Downloading %1$s of %2$s</string>
     <string name="update_later">Later</string>
     <string name="update_not_now">Not now</string>
     <string name="update_notifications_rationale">Nookast can tell you with a notification when a new version is ready to install.</string>
@@ -574,12 +558,13 @@
     <string name="licenses_apache">Apache License 2.0</string>
     <string name="licenses_ofl">SIL Open Font License 1.1</string>
     <string name="licenses_close">Close</string>
-    <string name="control_journal_description">Records steering-wheel and head-unit buttons, media controller connections, audio focus and audio devices. The server address, keys and episode titles are never recorded.</string>
+    <string name="control_journal_description">Records media button presses, media controller connections, audio focus and audio devices. The server address, keys and episode titles are never recorded.</string>
     <string name="control_journal_record">Record</string>
     <string name="control_journal_size">Size: %1$s of 2 MB</string>
     <string name="control_journal_mark_hint">What you are about to do</string>
     <string name="control_journal_mark">Marker</string>
     <string name="control_journal_presets">Quick markers</string>
+    <string name="control_journal_markers">Markers</string>
     <string name="control_journal_preset_wheel_next">Wheel: next</string>
     <string name="control_journal_preset_wheel_previous">Wheel: previous</string>
     <string name="control_journal_preset_wheel_play_pause">Wheel: play/pause</string>
@@ -729,6 +714,9 @@
     <string name="feed_url_refused">The server refused the change.</string>
     <string name="search_preview_feed">RSS</string>
     <string name="feed_url_copied">Copied</string>
+    <string name="search_followed_other_feed">You follow it via another feed · %1$s</string>
+    <string name="freshness_server_cannot_update">Server not updating</string>
+    <string name="feed_problem_server_only">The feed works: this phone reads it. The server cannot update it: %1$s. New episodes reach the app from the feed itself; the server will not have them until it can read the feed.</string>
+    <string name="feed_problem_private_address">The feed works: this phone reads it. Since 0.9.1 PinePods refuses feeds whose address leads into your home network, as here (a server on the same network, e.g. audiobookshelf). New episodes reach the app from the feed itself; for the server, give the feed a public address.</string>
     <string name="feed_problem">The server cannot update this feed: %1$s.</string>
-    <string name="feed_problem_since">The server cannot update this feed since %2$s: %1$s.</string>
 </resources>

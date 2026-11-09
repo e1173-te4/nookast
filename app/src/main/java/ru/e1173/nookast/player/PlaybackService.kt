@@ -111,6 +111,9 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
     private val controlReadApi = ru.e1173.nookast.core.sync.PinePodsSyncApi()
     private var controlReadJob: Job? = null
     private var controlReadMediaId: String? = null
+
+    // The next control read follows this device's own long pause: it may only offer (see decideStartRead).
+    private var resumedHereAfterPause = false
     private var pausedAtElapsedMs = 0L
     private var finalProgressWritten = false
 
@@ -307,7 +310,11 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
             )
             .setBackBuffer(PlaybackMediaCache.BACK_BUFFER_MS, true)
             .setTargetBufferBytes(memoryBudgetBytes)
-            .setPrioritizeTimeOverSizeThresholds(false)
+            // The retained back buffer counts toward the byte target: with a high-bitrate episode (RGC,
+            // 320 kbps: 30 min = 72 MB) the target fills up and loading stopped until the buffer ran dry,
+            // so playback stalled for a fetch (user, 9.11.2026: long loading in the car). Below the
+            // minimum buffer time loading goes on regardless; that adds at most ~50 s of audio.
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
@@ -605,7 +612,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                     val profile = compatibilityRegistry.resolveFor(
                         controllerInfo.packageName,
                         mediaDeviceIdentity,
-                        playbackPreferences.mediaButtonProfileMode.forcedProfileId,
+                        null,
                     )
                     if (!profile.mapPreviousNextToSeek) return false
                     val keyEvent = journalKeyEvent ?: return false
@@ -669,6 +676,8 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
         }
 
         restorePlaybackContext(player)
+        // Each time the app comes to the foreground: what was listened elsewhere meanwhile (user, 9.11.2026).
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(foregroundObserver)
 
         connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         networkCallbackRegistered = runCatching {
@@ -696,6 +705,8 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onDestroy() {
         persistFinalProgressSynchronously()
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
+        followServerJob?.cancel()
         playbackPreferences.unregisterListener(playbackPreferenceListener)
         periodicProgressJob?.cancel()
         contextWriteJob?.cancel()
@@ -739,6 +750,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
             // control read, as for a new start (§5.2, §5.10; review 3.6).
             PlaybackSessions.close()
             controlReadMediaId = null
+            resumedHereAfterPause = true
         }
         pausedAtElapsedMs = if (isPlaying) 0L else android.os.SystemClock.elapsedRealtime()
         finalProgressWritten = false
@@ -858,6 +870,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        resumedHereAfterPause = false
         NativeChapters.reset(mediaItem?.mediaId)
         replayDetector.reset()
         controlReadJob?.cancel()
@@ -1077,6 +1090,9 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
         val durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
         val startedAt = android.os.SystemClock.elapsedRealtime()
         val sessionAtStart = PlaybackSessions.currentFor(episodeId)
+        // Taken once: this read is the one for the resume after this device's own pause.
+        val resumedHere = resumedHereAfterPause
+        resumedHereAfterPause = false
         controlReadJob?.cancel()
         // Not ioScope: that one is serial, and a slow read must not hold up progress writes.
         controlReadJob = playerScope.launch(Dispatchers.IO) {
@@ -1098,6 +1114,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                 localPendingAtStart = pendingAtStart,
                 elapsedSinceStartMs = android.os.SystemClock.elapsedRealtime() - startedAt,
                 durationMs = durationMs,
+                resumedHere = resumedHere,
             )
             withContext(Dispatchers.Main) { applyControlRead(item.mediaId, action) }
         }
@@ -1405,6 +1422,50 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
         }
     }
 
+    private val foregroundObserver = object : androidx.lifecycle.DefaultLifecycleObserver {
+        override fun onStart(owner: androidx.lifecycle.LifecycleOwner) = followServerNowPlaying()
+    }
+    private var followServerJob: Job? = null
+
+    /**
+     * Now Playing follows the listener across devices (user, 9.11.2026: the phone kept showing an
+     * episode the car had finished, at the morning mark). While nothing plays here, the server's
+     * history is read; when something was listened elsewhere after this device last listened, the
+     * newest unfinished episode is loaded at the server position, not played. A position this device
+     * has not delivered yet is newer than anything the server knows and keeps the local episode.
+     */
+    private fun followServerNowPlaying() {
+        val player = mediaLibrarySession?.player ?: return
+        if (player.isPlaying || followServerJob?.isActive == true) return
+        val currentId = player.currentMediaItem?.mediaId?.toIntOrNull()
+        followServerJob = playerScope.launch(Dispatchers.IO) {
+            // After a cold start the restored item arrives a moment later.
+            delay(FOLLOW_SERVER_DELAY_MS)
+            val session = sessionStore.load() ?: return@launch
+            val context = database.offlineCacheDao().getCurrentPlaybackContext()
+            val localId = currentId ?: context?.pinePodsEpisodeId
+            val local = localId?.takeIf { it > 0 }?.let { appGraph.syncRepository.progress(it) }
+            val rows = runCatching { controlReadApi.listened(session) }.getOrNull() ?: return@launch
+            val chosen = ru.e1173.nookast.core.sync.ServerNowPlaying.choose(
+                rows,
+                localListenedAtEpochMs = context?.updatedAtEpochMs ?: 0L,
+                localDirty = local?.dirty == true,
+            ) ?: return@launch
+            val entry = itemFactory.findEntry(chosen.episodeId) ?: chosen.toEntry()
+            if (!itemFactory.isPlayable(entry, session)) return@launch
+            val positionMs = chosen.positionSeconds * 1_000
+            val item = itemFactory.mediaItem(entry, positionMs, session)
+            withContext(Dispatchers.Main) {
+                if (player.isPlaying) return@withContext
+                val same = player.currentMediaItem?.mediaId == item.mediaId
+                if (same && (player.currentPosition - positionMs).absoluteValue < FOLLOW_SERVER_TOLERANCE_MS) return@withContext
+                journal.record(ControlJournal.Category.PLAYER) { "follow server episode=${chosen.episodeId} same=$same" }
+                if (same) player.seekTo(positionMs) else player.setMediaItem(item, positionMs)
+                persistPlaybackContext(completed = false)
+            }
+        }
+    }
+
     /**
      * Seek back and forward by the intervals from Settings (plan 4.2) in the notification, on the
      * lock screen and in car shells that show media button preferences.
@@ -1594,6 +1655,9 @@ private fun Uri.withoutQueryParameter(name: String): Uri {
 }
 
 /** Seek by the Settings intervals as session commands: System UI shows only those in its slots. */
+private const val FOLLOW_SERVER_DELAY_MS = 1_500L
+private const val FOLLOW_SERVER_TOLERANCE_MS = 15_000L
+
 private const val SEEK_BACK_ACTION = "ru.e1173.nookast.SEEK_BACK"
 private const val SEEK_FORWARD_ACTION = "ru.e1173.nookast.SEEK_FORWARD"
 private val SEEK_BACK_COMMAND by lazy { SessionCommand(SEEK_BACK_ACTION, Bundle.EMPTY) }

@@ -39,6 +39,7 @@ import ru.e1173.nookast.app.appGraph
 import ru.e1173.nookast.core.session.SessionRepository
 import ru.e1173.nookast.data.local.QueueListEntry
 import ru.e1173.nookast.data.podcastFreshnessOf
+import ru.e1173.nookast.data.feedsReadLately
 import ru.e1173.nookast.data.local.QueueEpisodeEntity
 import ru.e1173.nookast.data.local.DashboardCacheEntity
 import ru.e1173.nookast.data.local.DashboardContinueLocalEntry
@@ -77,7 +78,6 @@ import ru.e1173.nookast.player.QueueInsertionPosition
 import ru.e1173.nookast.player.QueueSwipeAction
 import ru.e1173.nookast.player.PlaybackStorage
 import ru.e1173.nookast.player.ArtworkBitmapRepository
-import ru.e1173.nookast.player.MediaButtonProfileMode
 import ru.e1173.nookast.sync.ProgressCause
 import ru.e1173.nookast.sync.ProgressMutation
 import ru.e1173.nookast.sync.QueueMutation
@@ -104,6 +104,8 @@ data class QueueUiState(
     val podcastFreshness: Map<Int, ru.e1173.nookast.data.PodcastFreshness> = emptyMap(),
     // Feeds the server keeps failing to read (PinePods 0.9.1+ «Feed problems»), by podcast id.
     val serverFeedProblems: Map<Int, ru.e1173.nookast.data.remote.ServerFeedProblem> = emptyMap(),
+    // Podcasts whose feed the phone itself read lately: a server problem with them is the server's alone.
+    val feedsReadByPhone: Set<Int> = emptySet(),
     val podcastsRefreshing: Boolean = false,
     val podcastsError: QueueLoadError? = null,
     val pendingPodcastCount: Int = 0,
@@ -235,9 +237,9 @@ class QueueViewModel(
                 syncStore.podcastDao.observeSubscriptions(),
                 database.offlineCacheDao().observeLatestPublished(),
                 database.offlineCacheDao().observeRssRefreshStates(),
-            ) { podcasts, latest, states -> podcastFreshnessOf(podcasts, latest, states) }
-                .flowOn(kotlinx.coroutines.Dispatchers.Default).collect { freshness ->
-                _state.update { it.copy(podcastFreshness = freshness) }
+            ) { podcasts, latest, states -> podcastFreshnessOf(podcasts, latest, states) to feedsReadLately(states) }
+                .flowOn(kotlinx.coroutines.Dispatchers.Default).collect { (freshness, readByPhone) ->
+                _state.update { it.copy(podcastFreshness = freshness, feedsReadByPhone = readByPhone) }
             }
         }
         viewModelScope.launch {
@@ -833,11 +835,18 @@ class QueueViewModel(
         }
     }
 
-    fun refreshDashboard() {
+    /**
+     * Refreshes Home. Opening the screen again within [DASHBOARD_FRESH_MS] of the last refresh does
+     * nothing, and a refresh over data already shown is quiet (user, 9.11.2026: «Updating…» on every
+     * visit, even after a second on another screen).
+     */
+    fun refreshDashboard(force: Boolean = false) {
         if (dashboardJob?.isActive == true) return
+        val shown = _state.value.dashboard
+        if (!force && shown != null && clock.millis() - shown.refreshedAtEpochMs < DASHBOARD_FRESH_MS) return
         val session = sessionStore.load() ?: return
         dashboardJob = viewModelScope.launch {
-            _state.update { it.copy(dashboardRefreshing = true, dashboardError = null) }
+            _state.update { it.copy(dashboardRefreshing = force || it.dashboard == null, dashboardError = null) }
             val previous = _state.value.dashboard
             val result = runCatching {
                 withContext(Dispatchers.IO) {
@@ -1267,6 +1276,7 @@ private fun MutableStateFlow<List<Int>>.focus(id: Int) {
 }
 
 private const val MAX_FOCUSED_IDS = 6
+private const val DASHBOARD_FRESH_MS = 5 * 60_000L
 private const val PODCAST_DETAILS_DEBOUNCE_MS = 300L
 
 private fun buildPodcastDetailsSnapshot(

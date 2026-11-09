@@ -593,7 +593,9 @@ private fun DashboardWeekCard(
                         stringResource(R.string.dashboard_total_label),
                         Modifier.weight(1f),
                     )
-                    if (analytics.pinePodsSeconds >= 0) {
+                    // The same hours twice say nothing: then only the total (user, 6.11.2026).
+                    val sameHours = analytics.pinePodsSeconds / 3_600L == totalSeconds / 3_600L
+                    if (analytics.pinePodsSeconds >= 0 && !sameHours) {
                         val since = runCatching { java.time.LocalDate.parse(analytics.pinePodsSince) }.getOrNull()
                             ?.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", locale))
                         WeekFigure(

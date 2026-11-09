@@ -56,7 +56,6 @@ enum class PodcastViewMode {
 data class DisplayPreferencesState(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val palette: ru.e1173.nookast.designsystem.ThemePalette = ru.e1173.nookast.designsystem.ThemePalette.SIGNATURE,
-    val interfaceProfile: InterfaceProfile = InterfaceProfile.AUTO,
     val podcastSortMode: PodcastSortMode = PodcastSortMode.UPDATED,
     val podcastViewMode: PodcastViewMode = PodcastViewMode.GRID,
     val collapsedPodcastDescriptions: Set<Int> = emptySet(),
@@ -167,9 +166,6 @@ private class AppDisplayPreferences(context: Context) {
         get() = DisplayPreferencesState(
             themeMode = AppThemeMode.fromStoredValue(preferences.getString(KEY_THEME_MODE, null)),
             palette = ru.e1173.nookast.designsystem.ThemePalette.fromStoredValue(preferences.getString(KEY_PALETTE, null)),
-            interfaceProfile = InterfaceProfile.fromStoredValue(
-                preferences.getString(KEY_INTERFACE_PROFILE, null),
-            ),
             podcastSortMode = PodcastSortMode.fromStoredValue(
                 preferences.getString(KEY_PODCAST_SORT_MODE, null),
             ),
@@ -232,10 +228,6 @@ private class AppDisplayPreferences(context: Context) {
                 count.coerceIn(ru.e1173.nookast.data.remote.MIN_FEED_EPISODE_COUNT, ru.e1173.nookast.data.remote.MAX_FEED_EPISODE_COUNT),
             )
         }
-    }
-
-    fun setInterfaceProfile(profile: InterfaceProfile) {
-        preferences.edit { putString(KEY_INTERFACE_PROFILE, profile.name) }
     }
 
     fun setPodcastSortMode(mode: PodcastSortMode) {
@@ -330,7 +322,6 @@ private class AppDisplayPreferences(context: Context) {
         const val KEY_PALETTE = "theme_palette"
         const val KEY_FEED_EPISODE_COUNT = "feed_episode_count"
         const val KEY_HIDDEN_DASHBOARD_PLAYLISTS = "hidden_dashboard_playlists"
-        const val KEY_INTERFACE_PROFILE = "interface_profile"
         const val KEY_PODCAST_SORT_MODE = "podcast_sort_mode"
         const val KEY_PODCAST_VIEW_MODE = "podcast_view_mode"
         const val KEY_EPISODE_LIST_VIEW_MODE = "episode_list_view_mode"
@@ -379,11 +370,6 @@ class AppPreferencesViewModel(application: Application) : AndroidViewModel(appli
 
     fun setFeedEpisodeCount(count: Int) {
         preferences.setFeedEpisodeCount(count)
-        _state.value = preferences.state
-    }
-
-    fun setInterfaceProfile(profile: InterfaceProfile) {
-        preferences.setInterfaceProfile(profile)
         _state.value = preferences.state
     }
 
@@ -446,7 +432,3 @@ class AppPreferencesViewModel(application: Application) : AndroidViewModel(appli
         preferences.unregisterListener(listener)
     }
 }
-
-/** Stored interface profile, for diagnostics outside the Compose tree (control journal snapshot). */
-internal fun readStoredInterfaceProfile(context: Context): InterfaceProfile =
-    AppDisplayPreferences(context).state.interfaceProfile

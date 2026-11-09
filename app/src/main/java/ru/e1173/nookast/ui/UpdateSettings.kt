@@ -43,7 +43,8 @@ import ru.e1173.nookast.update.Updater
 
 /**
  * Settings → About → Updates (user, 2.11.2026): the mode, «Check now», what the updater knows and
- * what the newer version brings. Release builds only.
+ * the download under way. The offer itself is [UpdatePrompt]'s, one for every path the user starts.
+ * Release builds only.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -53,9 +54,7 @@ internal fun UpdateSettingsPanel(touchTarget: Dp) {
     LaunchedEffect(Unit) { Updater.loadAsync(context) }
     val state by Updater.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    var confirmStop by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
-    val install = rememberInstallAction()
     val askNotifications = rememberNotificationRequest()
 
     SettingsGroupLabel(R.string.update_title, Modifier.padding(top = 14.dp))
@@ -91,41 +90,46 @@ internal fun UpdateSettingsPanel(touchTarget: Dp) {
                 modifier = Modifier.padding(top = 4.dp),
             )
             val locale = LocalConfiguration.current.locales[0]
-            val version = state.available?.removePrefix("v").orEmpty()
+            val version = version(state)
+            val checked = java.time.Instant.ofEpochMilli(state.lastCheckMs).atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("d MMMM, HH:mm", locale))
             val status = when {
-                state.progress != null -> stringResource(R.string.update_downloading, version, state.progress!!)
+                state.progress != null -> null
                 state.checking -> stringResource(R.string.update_checking)
                 state.error != null -> stringResource(state.error!!.message())
                 state.downloaded && state.available != null -> stringResource(R.string.update_downloaded, version)
                 state.available != null -> stringResource(R.string.update_available, version)
-                state.lastCheckMs > 0 -> stringResource(
-                    R.string.update_latest,
-                    java.time.Instant.ofEpochMilli(state.lastCheckMs).atZone(java.time.ZoneId.systemDefault())
-                        .format(java.time.format.DateTimeFormatter.ofPattern("d MMMM, HH:mm", locale)),
-                )
+                state.lastCheckMs > 0 -> stringResource(R.string.update_latest, checked)
                 else -> stringResource(R.string.update_never_checked)
             }
-            Text(
-                status,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            if (status != null) {
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            } else {
+                UpdateDownloadProgress(state, Modifier.padding(top = 10.dp))
+            }
+            // One button per row: «Download and install» does not fit half a phone width.
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state.available != null && state.progress == null) {
+                    // The same offer as everywhere else: one consent, then download and install.
+                    Button(
+                        onClick = Updater::requestPrompt,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = touchTarget),
+                    ) {
+                        Text(stringResource(if (state.downloaded) R.string.update_install else R.string.update_download_install))
+                    }
+                }
                 OutlinedButton(
                     onClick = { scope.launch { Updater.check(context, manual = true) } },
-                    enabled = !state.checking,
-                    modifier = Modifier.weight(1f).heightIn(min = touchTarget),
+                    enabled = !state.checking && state.progress == null,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = touchTarget),
                 ) { Text(stringResource(R.string.update_check_now)) }
-                if (state.downloaded) {
-                    Button(
-                        onClick = { if (PlaybackActivity.playing) confirmStop = true else install() },
-                        modifier = Modifier.weight(1f).heightIn(min = touchTarget),
-                    ) { Text(stringResource(R.string.update_install)) }
+                if (ru.e1173.nookast.update.SavedUpdate.showInSettings(state.available, state.progress != null)) {
+                    SaveToDownloads(state, touchTarget)
                 }
             }
             val notes = releaseNotes(state.availableBody)
@@ -136,48 +140,6 @@ internal fun UpdateSettingsPanel(touchTarget: Dp) {
                 }
             }
         }
-    }
-
-    state.meteredSize?.let { size ->
-        ru.e1173.nookast.designsystem.ScaledAlertDialog(
-            onDismissRequest = Updater::dismissMetered,
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            text = {
-                Text(
-                    if (size > 0) {
-                        stringResource(R.string.update_metered_text, version(state), android.text.format.Formatter.formatShortFileSize(context, size))
-                    } else {
-                        stringResource(R.string.update_metered_text_unknown, version(state))
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    Updater.dismissMetered()
-                    scope.launch { Updater.check(context, manual = true, allowMetered = true) }
-                }) { Text(stringResource(R.string.update_download)) }
-            },
-            dismissButton = {
-                TextButton(onClick = Updater::dismissMetered) { Text(stringResource(R.string.control_journal_cancel)) }
-            },
-        )
-    }
-
-    if (confirmStop) {
-        ru.e1173.nookast.designsystem.ScaledAlertDialog(
-            onDismissRequest = { confirmStop = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            text = { Text(stringResource(R.string.update_stops_playback)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmStop = false
-                    install()
-                }) { Text(stringResource(R.string.update_install)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmStop = false }) { Text(stringResource(R.string.control_journal_cancel)) }
-            },
-        )
     }
 }
 
@@ -190,30 +152,117 @@ private fun releaseNotes(body: String): String {
     return remember(body, language) { ReleaseRules.notesOf(body, language) }
 }
 
+/** A determinate bar, «Downloading 1.2 of 4.4 MB» and «Cancel», wherever a download shows. */
+@Composable
+private fun UpdateDownloadProgress(state: ru.e1173.nookast.update.UpdateState, modifier: Modifier = Modifier, cancel: Boolean = true) {
+    val context = LocalContext.current
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { (state.progress ?: 0) / 100f },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (state.totalBytes > 0) {
+                    stringResource(
+                        R.string.update_downloading_bytes,
+                        android.text.format.Formatter.formatShortFileSize(context, state.receivedBytes),
+                        android.text.format.Formatter.formatShortFileSize(context, state.totalBytes),
+                    )
+                } else {
+                    stringResource(R.string.update_downloading, version(state), state.progress ?: 0)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            if (cancel) TextButton(onClick = Updater::cancelDownload) { Text(stringResource(R.string.control_journal_cancel)) }
+        }
+    }
+}
+
 /**
- * Installs the downloaded update. Without the install permission it opens Android's setting for it
- * and goes on when the user comes back having allowed it (OTA review, 3.11.2026).
+ * Downloads (when needed) and installs. Without the install permission it first opens Android's
+ * setting for it and goes on when the user comes back having allowed it (OTA review, 3.11.2026).
+ * A trimmed system shell may open nothing (user, 6.11.2026): then the offer says how to allow it
+ * by hand, never silence.
  */
 @Composable
 private fun rememberInstallAction(): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var awaitingPermission by remember { mutableStateOf(false) }
+    var requestedAtMs by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    var pausedAtMs by remember { mutableStateOf<Long?>(null) }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+        if (awaitingPermission) pausedAtMs = android.os.SystemClock.elapsedRealtime()
+    }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
         if (awaitingPermission && Updater.canInstall(context)) {
             awaitingPermission = false
-            scope.launch { Updater.install(context) }
+            Updater.awaitPermission(context, false)
+            Updater.permissionHelp(context, false)
+            Updater.downloadAndInstall(context)
         }
     }
     return {
-        if (!Updater.canInstall(context)) {
-            awaitingPermission = true
-            context.startActivity(
-                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()),
-            )
+        if (Updater.canInstall(context)) {
+            Updater.permissionHelp(context, false)
+            Updater.downloadAndInstall(context)
         } else {
-            scope.launch { Updater.install(context) }
+            awaitingPermission = true
+            Updater.awaitPermission(context, true)
+            pausedAtMs = null
+            requestedAtMs = android.os.SystemClock.elapsedRealtime()
+            val opened = listOf(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()),
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()),
+            ).firstOrNull { intent ->
+                runCatching { context.startActivity(intent) }
+                    .onFailure { ru.e1173.nookast.update.UpdateLog.record(context, "permission ${intent.action} failed ${it.javaClass.simpleName}") }
+                    .isSuccess
+            }
+            ru.e1173.nookast.update.UpdateLog.record(context, "permission request action=${opened?.action ?: "none"}")
+            scope.launch {
+                kotlinx.coroutines.delay(PERMISSION_SCREEN_TIMEOUT_MS)
+                val shown = ru.e1173.nookast.update.InstallPaths.permissionScreenOpened(requestedAtMs, pausedAtMs, PERMISSION_SCREEN_TIMEOUT_MS)
+                ru.e1173.nookast.update.UpdateLog.record(context, "permission screen opened=$shown")
+                if (!shown) Updater.permissionHelp(context, true)
+            }
         }
+    }
+}
+
+private const val PERMISSION_SCREEN_TIMEOUT_MS = 1_000L
+
+/**
+ * Starts the installer screens [Updater] asks for from this activity, for a result: the session's
+ * confirmation and the classic installer (user, 6.11.2026: started from a receiver, the
+ * confirmation's install button did not react on one device).
+ */
+@Composable
+private fun InstallerLauncher(launch: Intent?, saveAs: String?) {
+    val context = LocalContext.current
+    // Android 9 and older save through a document screen; a trimmed shell may have none.
+    val document = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/vnd.android.package-archive"),
+    ) { uri -> Updater.saveToDocument(context, uri) }
+    LaunchedEffect(saveAs) {
+        val name = saveAs ?: return@LaunchedEffect
+        runCatching { document.launch(name) }.onFailure { Updater.saveUnavailable(context) }
+    }
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        @Suppress("DEPRECATION")
+        val installResult = result.data?.extras?.getInt("android.intent.extra.INSTALL_RESULT")
+        Updater.classicResult(context, result.resultCode, installResult)
+    }
+    LaunchedEffect(launch) {
+        val intent = launch ?: return@LaunchedEffect
+        Updater.launched()
+        val multiWindow = (context as? android.app.Activity)?.isInMultiWindowMode
+        ru.e1173.nookast.update.UpdateLog.record(context, "launch ${intent.action} multiWindow=$multiWindow")
+        runCatching { launcher.launch(intent) }.onFailure { Updater.launchFailed(context, it) }
     }
 }
 
@@ -258,47 +307,103 @@ private fun rememberNotificationRequest(): () -> Unit {
 @Volatile private var notificationsAsked = false
 
 /**
- * «Update X is ready — Install / Later» when the app opens and nothing plays, for an update that
- * waits for the user: Android would confirm it, the mode only tells, or its notification was tapped
- * (OTA review, 3.11.2026).
+ * The one update offer (user, 5.11.2026): «Version X is available · 4.4 MB», what's new, a note on
+ * mobile data and on playback, and «Download and install» / «Later». It shows after «Check now»,
+ * when the app opens and nothing plays for an update that waits for the user (Android would confirm
+ * it, or the mode only tells), and from its notification. After consent the same dialog shows the
+ * download and goes on to the install.
  */
 @Composable
 internal fun UpdatePrompt() {
     if (!Updater.enabled) return
     val context = LocalContext.current
-    LaunchedEffect(Unit) { Updater.loadAsync(context) }
+    LaunchedEffect(Unit) {
+        Updater.loadAsync(context)
+        Updater.resumeAfterPermission(context)
+    }
     val state by Updater.state.collectAsStateWithLifecycle()
     val install = rememberInstallAction()
     val askNotifications = rememberNotificationRequest()
-    val waiting = state.downloaded && state.available != null &&
+    val downloading = state.progress != null
+    InstallerLauncher(state.launch, state.saveAs)
+    val waiting = state.available != null &&
         (state.needsConfirmation || state.mode == UpdateMode.NOTIFY || state.promptRequested)
-    if (!waiting || state.promptPostponed || (PlaybackActivity.playing && !state.promptRequested)) return
+    val shown = downloading || (waiting && !state.promptPostponed && (!PlaybackActivity.playing || state.promptRequested))
+    if (!shown) return
+    val offer = remember(state.available, state.availableSize, state.downloaded) {
+        ru.e1173.nookast.update.UpdateFlow.offer(
+            tag = state.available,
+            sizeBytes = state.availableSize,
+            downloaded = state.downloaded,
+            metered = Updater.isMetered(context),
+            playing = PlaybackActivity.playing,
+        )
+    } ?: return
     val notes = releaseNotes(state.availableBody)
     val later = {
         Updater.postponePrompt()
         askNotifications()
     }
+    val size = offer.sizeBytes.takeIf { it > 0 }?.let { android.text.format.Formatter.formatShortFileSize(context, it) }
     ru.e1173.nookast.designsystem.ScaledAlertDialog(
-        onDismissRequest = later,
+        onDismissRequest = { if (!downloading) later() },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        title = { Text(stringResource(R.string.update_prompt_title, version(state))) },
+        title = {
+            Text(
+                if (size != null) {
+                    stringResource(R.string.update_offer_title, version(state), size)
+                } else {
+                    stringResource(R.string.update_available, version(state))
+                },
+            )
+        },
         text = {
-            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState(), flingBehavior = deviceFling())) {
-                if (PlaybackActivity.playing) {
-                    Text(stringResource(R.string.update_stops_playback), style = MaterialTheme.typography.bodyMedium)
+            Column(
+                Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState(), flingBehavior = deviceFling()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (downloading) UpdateDownloadProgress(state, cancel = false)
+                if (offer.metered && !downloading) {
+                    Text(stringResource(R.string.update_offer_metered), style = MaterialTheme.typography.bodyMedium)
+                }
+                if (offer.stopsPlayback) {
+                    Text(stringResource(R.string.update_offer_stops_playback), style = MaterialTheme.typography.bodyMedium)
+                }
+                state.error?.let { error ->
+                    Text(stringResource(error.message()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                }
+                if (state.permissionHelp) {
+                    Text(stringResource(R.string.update_permission_manual), style = MaterialTheme.typography.bodyMedium)
+                }
+                if (ru.e1173.nookast.update.SavedUpdate.showInOffer(state.available, state.classicFailed, downloading)) {
+                    SaveToDownloads(state)
                 }
                 if (notes.isNotBlank()) {
-                    Text(notes, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                    Text(notes, style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                Updater.postponePrompt()
-                install()
-            }) { Text(stringResource(R.string.update_install)) }
+            if (downloading) {
+                TextButton(onClick = Updater::cancelDownload) { Text(stringResource(R.string.control_journal_cancel)) }
+            } else {
+                TextButton(onClick = install) {
+                    Text(
+                        stringResource(
+                            when {
+                                state.permissionHelp -> R.string.update_check_again
+                                state.sessionFailed -> R.string.update_install_other_way
+                                offer.action == ru.e1173.nookast.update.OfferAction.INSTALL -> R.string.update_install
+                                else -> R.string.update_download_install
+                            },
+                        ),
+                    )
+                }
+            }
         },
-        dismissButton = { TextButton(onClick = later) { Text(stringResource(R.string.update_later)) } },
+        dismissButton = if (downloading) null else {
+            { TextButton(onClick = later) { Text(stringResource(R.string.update_later)) } }
+        },
     )
 }
 
@@ -333,11 +438,42 @@ internal fun UpdatedNotice() {
         onDismissRequest = { updatedTo = null },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         title = { Text(stringResource(R.string.update_done_title, tag.removePrefix("v"))) },
-        text = {
-            if (notes.isNotBlank()) {
-                Text(notes, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState(), flingBehavior = deviceFling()))
-            }
+        text = if (notes.isBlank()) {
+            null
+        } else {
+            { Text(notes, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState(), flingBehavior = deviceFling())) }
         },
         confirmButton = { TextButton(onClick = { updatedTo = null }) { Text(stringResource(R.string.update_done_ok)) } },
     )
+}
+
+/**
+ * «Save to Downloads», the last way (user, 6.11.2026): the checked update as a file to open in a
+ * file manager or carry to another device; then where it is and the certificate to compare.
+ */
+@Composable
+private fun SaveToDownloads(state: ru.e1173.nookast.update.UpdateState, touchTarget: Dp? = null) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val saved = state.savedName
+        if (saved != null) {
+            Text(stringResource(R.string.update_saved, saved), style = MaterialTheme.typography.bodyMedium)
+            val fingerprint = remember { Updater.certificateFingerprint(context) }
+            if (fingerprint.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.update_saved_certificate, fingerprint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            if (state.saveFailed) {
+                Text(stringResource(R.string.update_save_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
+            OutlinedButton(
+                onClick = { Updater.saveToDownloads(context) },
+                modifier = Modifier.fillMaxWidth().let { if (touchTarget != null) it.heightIn(min = touchTarget) else it },
+            ) { Text(stringResource(R.string.update_save_to_downloads)) }
+        }
+    }
 }

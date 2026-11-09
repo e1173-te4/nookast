@@ -25,7 +25,7 @@
     <string name="device_parameters">Параметры устройства</string>
     <string name="jaecoo_profile_detected">Обнаружен профиль JAECOO J7 / DesaySV — увеличены элементы и текст.</string>
     <string name="large_screen_detected">Обнаружен крупный портретный экран — включены увеличенные элементы.</string>
-    <string name="device_help">Эти данные помогут точно настроить интерфейс для головного устройства.</string>
+    <string name="device_help">Эти данные помогут точно настроить интерфейс под этот экран.</string>
     <string name="device">Устройство</string>
     <string name="window">Окно</string>
     <string name="ui_size">Размер UI</string>
@@ -58,6 +58,8 @@
     <string name="search_added">Добавлен: выпуски появятся чуть позже</string>
     <string name="search_in_library">Уже в ваших подкастах</string>
     <string name="search_add_failed">Не удалось добавить: сервер не принял ленту</string>
+    <string name="search_add_failed_server_fetch">Сервер PinePods не смог загрузить эту ленту. С самой лентой всё может быть в порядке: сервер не прочитал её из своей сети. Попробуйте позже.</string>
+    <string name="search_add_failed_network">Нет связи с сервером. Попробуйте ещё раз.</string>
     <string name="search_preview_subscribe">Подписаться</string>
     <string name="search_preview_adding">Добавляю…</string>
     <string name="search_preview_subscribed">Вы подписаны</string>
@@ -113,26 +115,13 @@
     <string name="offline_and_cache">Офлайн и кэш</string>
     <string name="download_on_playback">Загружать эпизод целиком при начале воспроизведения</string>
     <string name="download_on_playback_help">Эпизод останется доступен без подключения к сети. Плеер и загрузка делят дисковый кэш, поэтому выпуск не качается дважды; остаток докачивается только по Wi-Fi. Когда файл готов, плеер переходит на него при паузе или перемотке. Через сутки после прослушивания файл удаляется; выпуски, скачанные вручную, остаются.</string>
-    <string name="ahead_cache_size">Буфер в памяти: %1$d МБ</string>
-    <string name="cache_restart_note">Новый размер кэша применяется при следующем запуске проигрывателя.</string>
     <string name="storage_usage">Потоковый кэш: %1$s · Офлайн-выпуски: %2$s</string>
     <string name="clear_ahead_cache">Очистить потоковый кэш</string>
     <string name="cache_clear_pending">Кэш очистится после перезапуска проигрывателя</string>
-    <string name="media_button_profile">Медиакнопки головного устройства</string>
-    <string name="profile_auto">Автоматическое определение</string>
-    <string name="profile_standard">Стандартное поведение Android</string>
-    <string name="profile_jaecoo">JAECOO J7: перемотка кнопками</string>
-    <string name="appearance_and_layout">Оформление и размер интерфейса</string>
-    <string name="appearance_temporary_help">Функциональные настройки. Финальный вид раздела появится после утверждения отдельного макета.</string>
     <string name="theme_mode">Тема</string>
     <string name="theme_system">Как в системе</string>
     <string name="theme_light">Светлая</string>
     <string name="theme_dark">Тёмная</string>
-    <string name="interface_profile">Профиль интерфейса</string>
-    <string name="interface_auto">Автоматически</string>
-    <string name="interface_standard">Обычный телефон</string>
-    <string name="interface_large">Крупные элементы</string>
-    <string name="interface_jaecoo">JAECOO J7 14,8 дюйма</string>
     <string name="download">Скачать</string>
     <string name="download_queued">В очереди</string>
     <string name="downloading">Загрузка…</string>
@@ -263,10 +252,6 @@
         <item quantity="many">%1$d с</item>
         <item quantity="other">%1$d с</item>
     </plurals>
-    <string name="settings_head_unit_controls">Управление с головного устройства</string>
-    <string name="settings_media_profile_auto_description">Использовать автоматическое определение текущего устройства.</string>
-    <string name="settings_media_profile_standard_description">Кнопки «Назад» и «Вперёд» работают по правилам Android.</string>
-    <string name="settings_media_profile_jaecoo_description">Кнопки «Назад» и «Вперёд» перематывают текущий эпизод.</string>
     <string name="settings_theme_system_description">Следовать дневному и ночному режиму устройства.</string>
     <string name="settings_theme_light_description">Всегда использовать светлое оформление.</string>
     <string name="settings_theme_dark_description">Всегда использовать тёмное оформление.</string>
@@ -277,10 +262,6 @@
     <string name="settings_palette_mint">Мята</string>
     <string name="settings_palette_signature">Фирменная</string>
     <string name="settings_color_palette_description">Цвета приложения в дневном и ночном режиме. Шрифт и расположение элементов у всех тем общие.</string>
-    <string name="settings_interface_auto_description">Выбирать размер по окну и характеристикам устройства.</string>
-    <string name="settings_interface_standard_description">Стандартные размеры элементов и текста.</string>
-    <string name="settings_interface_large_description">Увеличенные зоны нажатия без привязки к модели устройства.</string>
-    <string name="settings_interface_jaecoo_description">Крупные элементы и текст для экрана JAECOO J7.</string>
     <string name="settings_connection">Подключение</string>
     <string name="settings_status">Состояние</string>
     <string name="settings_actions">Действия</string>
@@ -310,7 +291,6 @@
     <string name="settings_sign_out_title">Выйти из аккаунта</string>
     <string name="settings_sign_out_description">Для повторного подключения потребуется войти снова.</string>
     <string name="settings_sign_out_action">Выйти</string>
-    <string name="settings_offline_and_head_unit">ОФЛАЙН И ГОЛОВНОЕ УСТРОЙСТВО</string>
     <string name="unknown_podcast">Неизвестный подкаст</string>
     <string name="back">Назад</string>
     <plurals name="played_episode_count">
@@ -319,8 +299,6 @@
         <item quantity="many">%1$d прослушано</item>
         <item quantity="other">%1$d прослушано</item>
     </plurals>
-    <string name="seek_back_setting">Назад: %1$d с</string>
-    <string name="seek_forward_setting">Вперёд: %1$d с</string>
     <string name="download_episode">Скачать</string>
     <string name="reorder_episode">Изменить порядок выпуска</string>
     <string name="podcast_sort_updated">По дате обновления</string>
@@ -503,10 +481,10 @@
 
     <!-- Настройки → Диагностика: журнал команд управления (2b.1). Временный экран, оформляется в D5. -->
     <string name="settings_diagnostics_title">Диагностика</string>
-    <string name="settings_diagnostics_section_description">Журнал команд управления от машины, руля и гарнитур.</string>
+    <string name="settings_diagnostics_section_description">Журнал команд управления воспроизведением от кнопок и гарнитур.</string>
     <string name="settings_about_title">О приложении</string>
     <string name="settings_about_description">Версия, сборка и устройство, на котором работает приложение.</string>
-    <string name="about_tagline">Клиент подкастов PinePods для телефона, складного экрана и машины.</string>
+    <string name="about_tagline">Клиент подкастов PinePods для телефона, складного экрана и планшета.</string>
     <string name="about_delivery">Выпуск</string>
     <string name="about_version">Версия</string>
     <string name="about_commit">Коммит</string>
@@ -537,7 +515,6 @@
     <string name="about_device">Устройство</string>
     <string name="about_screen">Экран</string>
     <string name="about_screen_value">%1$d × %2$d dp · %3$d dpi</string>
-    <string name="about_profile">Профиль интерфейса</string>
     <string name="about_server">Сервер PinePods</string>
     <string name="about_build_debug">отладочная</string>
     <string name="about_build_release">релизная</string>
@@ -550,18 +527,17 @@
     <string name="update_mode_automatic">Автоматически</string>
     <string name="update_mode_notify">Только сообщать</string>
     <string name="update_mode_off">Выключено</string>
-    <string name="update_mode_automatic_help">Раз в сутки приложение ищет новую версию, скачивает её по Wi-Fi и ставит при выключенном экране, когда ничего не играет и не было паузы последние полчаса, машина не подключена и не идут загрузки выпусков. Если Android попросил бы подтвердить, приложение предложит обновление при открытии.</string>
-    <string name="update_mode_notify_help">Раз в сутки приложение ищет новую версию, скачивает её по Wi-Fi и сообщает о ней; ставите вы сами.</string>
+    <string name="update_mode_automatic_help">Раз в сутки ставит новую версию по Wi-Fi, пока телефоном не пользуются.</string>
+    <string name="update_mode_notify_help">Раз в сутки ищет новую версию и сообщает о ней.</string>
     <string name="update_mode_off_help">Приложение само не ищет новые версии. «Проверить сейчас» работает по-прежнему.</string>
     <string name="update_checking">Проверяю…</string>
     <string name="update_available">Доступна версия %1$s</string>
     <string name="update_downloaded">Версия %1$s скачана и готова к установке</string>
-    <string name="update_latest">Обновлений нет · проверено %1$s</string>
+    <string name="update_latest">Установлена последняя версия · проверено %1$s</string>
     <string name="update_never_checked">Ещё не проверялось</string>
     <string name="update_check_now">Проверить сейчас</string>
     <string name="update_install">Установить</string>
     <string name="update_whats_new">Что нового</string>
-    <string name="update_stops_playback">Установка перезапустит приложение и остановит воспроизведение. Установить сейчас?</string>
     <string name="update_error_network">Не удалось связаться с сервером обновлений. Попробуйте позже.</string>
     <string name="update_error_no_release">Опубликованная версия не найдена.</string>
     <string name="update_error_checksum">Скачанный файл повреждён и удалён.</string>
@@ -576,10 +552,18 @@
     <string name="update_done_title">Обновлено до %1$s</string>
     <string name="update_done_ok">Хорошо</string>
     <string name="update_downloading">Скачиваю версию %1$s · %2$d %%</string>
-    <string name="update_metered_text">Версия %1$s весит %2$s. Скачать по мобильной сети?</string>
-    <string name="update_metered_text_unknown">Скачать версию %1$s по мобильной сети?</string>
-    <string name="update_download">Скачать</string>
-    <string name="update_prompt_title">Обновление %1$s готово</string>
+    <string name="update_download_install">Скачать и установить</string>
+    <string name="update_permission_manual">Android не открыл экран разрешения. Разрешите установку вручную: Настройки Android → Приложения → Nookast → Установка неизвестных приложений, затем вернитесь и нажмите «Проверить снова».</string>
+    <string name="update_check_again">Проверить снова</string>
+    <string name="update_install_other_way">Другой способ установки</string>
+    <string name="update_save_to_downloads">Сохранить в «Загрузки»</string>
+    <string name="update_saved">Файл сохранён: Загрузки/%1$s. Откройте его в файловом менеджере, чтобы установить.</string>
+    <string name="update_saved_certificate">Сертификат Nookast (SHA-256): %1$s. Android установит файл, только если у него тот же сертификат.</string>
+    <string name="update_save_failed">Сохранить файл на этом устройстве не получилось.</string>
+    <string name="update_offer_title">Доступна версия %1$s · %2$s</string>
+    <string name="update_offer_metered">Загрузка пойдёт по мобильной сети.</string>
+    <string name="update_offer_stops_playback">Установка остановит воспроизведение и перезапустит приложение.</string>
+    <string name="update_downloading_bytes">Загрузка %1$s из %2$s</string>
     <string name="update_later">Позже</string>
     <string name="update_not_now">Не сейчас</string>
     <string name="update_notifications_rationale">Нукаст может сообщить уведомлением, когда новая версия будет готова к установке.</string>
@@ -595,12 +579,13 @@
     <string name="licenses_apache">Apache License 2.0</string>
     <string name="licenses_ofl">SIL Open Font License 1.1</string>
     <string name="licenses_close">Закрыть</string>
-    <string name="control_journal_description">Записывает нажатия кнопок руля и экрана магнитолы, подключения медиаконтроллеров, аудиофокус и аудиоустройства. Адрес сервера, ключи и названия эпизодов не записываются.</string>
+    <string name="control_journal_description">Записывает нажатия медиакнопок, подключения медиаконтроллеров, аудиофокус и аудиоустройства. Адрес сервера, ключи и названия эпизодов не записываются.</string>
     <string name="control_journal_record">Записывать</string>
     <string name="control_journal_size">Размер: %1$s из 2 МБ</string>
     <string name="control_journal_mark_hint">Что вы сейчас сделаете</string>
     <string name="control_journal_mark">Отметка</string>
     <string name="control_journal_presets">Быстрые отметки</string>
+    <string name="control_journal_markers">Отметки</string>
     <string name="control_journal_preset_wheel_next">Руль: следующий</string>
     <string name="control_journal_preset_wheel_previous">Руль: предыдущий</string>
     <string name="control_journal_preset_wheel_play_pause">Руль: пауза/играть</string>
@@ -762,6 +747,9 @@
     <string name="feed_url_refused">Сервер не принял изменение.</string>
     <string name="search_preview_feed">RSS</string>
     <string name="feed_url_copied">Скопировано</string>
+    <string name="search_followed_other_feed">Вы подписаны через другую ленту · %1$s</string>
+    <string name="freshness_server_cannot_update">Сервер не обновляет</string>
+    <string name="feed_problem_server_only">Лента работает: телефон её читает. Сервер не может её обновить: %1$s. Новые выпуски приходят в приложение прямо из ленты; на сервере их не будет, пока он не сможет её прочитать.</string>
+    <string name="feed_problem_private_address">Лента работает: телефон её читает. С версии 0.9.1 PinePods не читает ленты, адрес которых ведёт в вашу домашнюю сеть, — как здесь (сервер в той же сети, например audiobookshelf). Новые выпуски приходят в приложение прямо из ленты; для сервера дайте ленте публичный адрес.</string>
     <string name="feed_problem">Сервер не может обновить ленту: %1$s.</string>
-    <string name="feed_problem_since">Сервер не может обновить ленту с %2$s: %1$s.</string>
 </resources>

@@ -23,6 +23,18 @@
         <intent>
             <action android:name="androidx.media3.session.MediaSessionService" />
         </intent>
+        <!-- Which screens handle the update install, for the diagnostics (API 30+ visibility). -->
+        <intent>
+            <action android:name="android.settings.MANAGE_UNKNOWN_APP_SOURCES" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSTALL_PACKAGE" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
     </queries>
 
     <application

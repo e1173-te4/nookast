@@ -16,8 +16,8 @@ class PlaybackBehaviorPolicyTest {
     @Test
     fun `memory budget adds back buffer and respects a third of the heap`() {
         val mb = 1024 * 1024
-        assertEquals(64 * mb, PlaybackMediaCache.memoryBudgetBytes(32, heapMegabytes = 512))
-        assertEquals(160 * mb, PlaybackMediaCache.memoryBudgetBytes(128, heapMegabytes = 512))
+        assertEquals(104 * mb, PlaybackMediaCache.memoryBudgetBytes(32, heapMegabytes = 512))
+        assertEquals(170 * mb, PlaybackMediaCache.memoryBudgetBytes(128, heapMegabytes = 512))
         assertEquals(85 * mb, PlaybackMediaCache.memoryBudgetBytes(128, heapMegabytes = 256))
         assertEquals(42 * mb, PlaybackMediaCache.memoryBudgetBytes(128, heapMegabytes = 0))
     }

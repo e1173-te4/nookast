@@ -26,12 +26,6 @@ class PlaybackPreferences(context: Context) {
             .coerceIn(MIN_SEEK_SECONDS, MAX_SEEK_SECONDS)
         set(value) = preferences.edit { putInt(KEY_SEEK_FORWARD_SECONDS, value.coerceIn(MIN_SEEK_SECONDS, MAX_SEEK_SECONDS)) }
 
-    var mediaButtonProfileMode: MediaButtonProfileMode
-        get() = MediaButtonProfileMode.fromStoredValue(
-            preferences.getString(KEY_MEDIA_BUTTON_PROFILE, null),
-        )
-        set(value) = preferences.edit { putString(KEY_MEDIA_BUTTON_PROFILE, value.name) }
-
     var playbackStartQueuePosition: QueueInsertionPosition
         get() = QueueInsertionPosition.fromStoredValue(
             preferences.getString(KEY_PLAYBACK_START_QUEUE_POSITION, null),
@@ -175,7 +169,6 @@ class PlaybackPreferences(context: Context) {
         private const val KEY_AHEAD_CACHE_MB = "ahead_cache_megabytes"
         private const val KEY_SEEK_BACK_SECONDS = "seek_back_seconds"
         private const val KEY_SEEK_FORWARD_SECONDS = "seek_forward_seconds"
-        private const val KEY_MEDIA_BUTTON_PROFILE = "media_button_profile"
         private const val KEY_PLAYBACK_START_QUEUE_POSITION =
             "playback_start_queue_position"
         private const val KEY_MANUAL_QUEUE_POSITION = "manual_queue_position"
@@ -215,18 +208,5 @@ enum class QueueInsertionPosition {
             value: String?,
             default: QueueInsertionPosition,
         ): QueueInsertionPosition = entries.firstOrNull { it.name == value } ?: default
-    }
-}
-
-enum class MediaButtonProfileMode(
-    val forcedProfileId: String?,
-) {
-    AUTO(null),
-    STANDARD("standard"),
-    JAECOO_J7("jaecoo_j7");
-
-    companion object {
-        fun fromStoredValue(value: String?): MediaButtonProfileMode =
-            entries.firstOrNull { it.name == value } ?: AUTO
     }
 }

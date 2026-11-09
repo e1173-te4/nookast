@@ -119,7 +119,7 @@ internal fun PodcastSearchScreen(
                         SearchGroup {
                             state.results.forEachIndexed { index, podcast ->
                                 if (index > 0) HorizontalDivider(Modifier.padding(start = 84.dp), thickness = 0.5.dp, color = colors.divider)
-                                FoundRow(podcast, state, subscribed.find(podcast, state.results), scale, onAdd = { viewModel.add(podcast, onAdded) }, onOpenPodcast = onOpenPodcast, onOpenCard = openCard, host = subscribed.twinHost(podcast, state.results))
+                                FoundRow(podcast, state, subscribed.find(podcast), scale, onAdd = { viewModel.add(podcast, onAdded) }, onOpenPodcast = onOpenPodcast, onOpenCard = openCard, host = subscribed.twinHost(podcast, state.results), elsewhere = subscribed.sameShowElsewhere(podcast))
                             }
                         }
                     }
@@ -149,7 +149,7 @@ internal fun PodcastSearchScreen(
         label = "foundCard",
     ) { opened ->
         opened?.let { podcast ->
-            val subscription = subscribed.find(podcast, state.results)
+            val subscription = subscribed.find(podcast)
             val feed = podcast.feedUrl
             FoundPodcastCard(
                 podcast = podcast,
@@ -167,6 +167,7 @@ internal fun PodcastSearchScreen(
                 onBack = viewModel::close,
                 onAdd = { viewModel.add(podcast, onAdded) },
                 onOpenPodcast = { subscription?.let { onOpenPodcast(it.podcastId) } },
+                failure = state.addFailed[feed],
             )
         }
     }
@@ -256,6 +257,7 @@ private fun FoundRow(
     onOpenCard: (FoundPodcast) -> Unit,
     title: String? = null,
     host: String? = null,
+    elsewhere: PodcastSubscriptionEntity? = null,
 ) {
     val colors = LocalNookastColors.current
     val feed = podcast.feedUrl
@@ -288,11 +290,15 @@ private fun FoundRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val secondLine = when {
-                feed in state.addFailed -> stringResource(R.string.search_add_failed)
+                feed in state.addFailed -> stringResource(addFailedText(state.addFailed[feed]))
                 subscription != null -> stringResource(R.string.search_in_library)
+                elsewhere != null -> stringResource(
+                    R.string.search_followed_other_feed,
+                    podcast.feedUrl.substringAfter("://").substringBefore('/').removePrefix("www."),
+                )
                 feed in state.added -> stringResource(R.string.search_added)
                 else -> podcast.author
-            }.let { line -> if (host != null) listOf(line, host).filter(String::isNotBlank).joinToString(" · ") else line }
+            }.let { line -> if (host != null && elsewhere == null) listOf(line, host).filter(String::isNotBlank).joinToString(" · ") else line }
             if (secondLine.isNotBlank()) {
                 Text(
                     secondLine,
@@ -350,15 +356,17 @@ internal class SubscriptionLookup(subscriptions: List<PodcastSubscriptionEntity>
     private val byFeed = subscriptions.associateBy { feedKey(it.feedUrl) }
     private val byTitle = subscriptions.groupBy { textKey(it.name) }
 
+    /** The subscription whose feed [podcast] is: only that one is «in your podcasts» (user, 6.11.2026). */
+    fun find(podcast: FoundPodcast): PodcastSubscriptionEntity? = byFeed[feedKey(podcast.feedUrl)]
+
     /**
-     * [among]: the other results on screen. When several share the title (the same show under
-     * different feeds, user, 6.11.2026), only the one whose feed is subscribed is marked: the title
-     * cannot tell them apart.
+     * A subscription to the same show under another feed: the same title, and the same author when
+     * both name one (user, 6.11.2026: BeardyBuilding is followed via the s3mts link, the search finds
+     * cloud.mave.digital). Null when [podcast] is itself the subscribed feed.
      */
-    fun find(podcast: FoundPodcast, among: List<FoundPodcast> = emptyList()): PodcastSubscriptionEntity? {
-        byFeed[feedKey(podcast.feedUrl)]?.let { return it }
+    fun sameShowElsewhere(podcast: FoundPodcast): PodcastSubscriptionEntity? {
+        if (find(podcast) != null) return null
         val title = textKey(podcast.title).ifEmpty { return null }
-        if (among.any { other -> feedKey(other.feedUrl) != feedKey(podcast.feedUrl) && textKey(other.title) == title }) return null
         val author = textKey(podcast.author)
         return byTitle[title]?.firstOrNull { author.isEmpty() || textKey(it.author).let { own -> own.isEmpty() || own == author } }
     }
@@ -374,4 +382,11 @@ internal class SubscriptionLookup(subscriptions: List<PodcastSubscriptionEntity>
         fun feedKey(url: String): String = url.trim().lowercase().substringAfter("://").trimEnd('/')
         fun textKey(text: String): String = text.trim().lowercase().split(Regex("\\s+")).filter(String::isNotEmpty).joinToString(" ")
     }
+}
+
+/** What went wrong with adding, in words (user, 9.11.2026: «the server did not accept the feed» for a fetch failure). */
+internal fun addFailedText(failure: ru.e1173.nookast.data.remote.AddFailure?): Int = when (failure) {
+    ru.e1173.nookast.data.remote.AddFailure.SERVER_FETCH -> R.string.search_add_failed_server_fetch
+    ru.e1173.nookast.data.remote.AddFailure.NETWORK -> R.string.search_add_failed_network
+    else -> R.string.search_add_failed
 }

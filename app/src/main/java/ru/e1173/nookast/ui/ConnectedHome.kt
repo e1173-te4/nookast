@@ -68,12 +68,10 @@ import ru.e1173.nookast.data.remote.QueueLoadError
 import ru.e1173.nookast.player.PlaybackError
 import ru.e1173.nookast.player.PlaybackUiState
 import ru.e1173.nookast.player.StreamReachability
-import ru.e1173.nookast.player.MediaButtonProfileMode
 import ru.e1173.nookast.player.QueueInsertionPosition
 import ru.e1173.nookast.player.QueueSwipeAction
 import ru.e1173.nookast.offline.EpisodeDownloadState
 import ru.e1173.nookast.preferences.AppThemeMode
-import ru.e1173.nookast.preferences.InterfaceProfile
 import ru.e1173.nookast.preferences.PodcastSortMode
 import ru.e1173.nookast.preferences.PodcastViewMode
 
@@ -118,16 +116,13 @@ internal fun ConnectedHome(
     onAheadCacheChanged: (Int) -> Unit,
     onSeekBackSecondsChanged: (Int) -> Unit,
     onSeekForwardSecondsChanged: (Int) -> Unit,
-    onMediaButtonProfileChanged: (MediaButtonProfileMode) -> Unit,
     onPlaybackStartQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onManualQueuePositionChanged: (QueueInsertionPosition) -> Unit,
     onQueueSwipeStartActionChanged: (QueueSwipeAction) -> Unit,
     onQueueSwipeEndActionChanged: (QueueSwipeAction) -> Unit,
     onClearAheadCache: () -> Unit,
     themeMode: AppThemeMode,
-    interfaceProfile: InterfaceProfile,
     onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
     selectedPodcastId: Int?,
     podcastSortMode: PodcastSortMode,
     podcastViewMode: PodcastViewMode,
@@ -293,18 +288,15 @@ internal fun ConnectedHome(
             largeControls = largeControls,
             touchTarget = touchTarget,
             themeMode = themeMode,
-            interfaceProfile = interfaceProfile,
             onClose = onCloseSettings,
             onRefresh = onRefresh,
             onRunDiagnostics = onRunDiagnostics,
             onSignOut = onSignOut,
             onThemeModeChanged = onThemeModeChanged,
-            onInterfaceProfileChanged = onInterfaceProfileChanged,
             onDownloadWholeEpisodeChanged = onDownloadWholeEpisodeChanged,
             onAheadCacheChanged = onAheadCacheChanged,
             onSeekBackSecondsChanged = onSeekBackSecondsChanged,
             onSeekForwardSecondsChanged = onSeekForwardSecondsChanged,
-            onMediaButtonProfileChanged = onMediaButtonProfileChanged,
             onPlaybackStartQueuePositionChanged = onPlaybackStartQueuePositionChanged,
             onManualQueuePositionChanged = onManualQueuePositionChanged,
             onQueueSwipeStartActionChanged = onQueueSwipeStartActionChanged,
@@ -462,298 +454,6 @@ private fun AppNavigationGlyph(
             }
         }
     }
-}
-
-@Composable
-private fun PlaybackSettingsCard(
-    downloadWholeEpisode: Boolean,
-    aheadCacheMegabytes: Int,
-    seekBackSeconds: Int,
-    seekForwardSeconds: Int,
-    aheadCacheBytes: Long,
-    offlineDownloadBytes: Long,
-    aheadCacheClearPending: Boolean,
-    mediaButtonProfileMode: MediaButtonProfileMode,
-    onDownloadWholeEpisodeChanged: (Boolean) -> Unit,
-    onAheadCacheChanged: (Int) -> Unit,
-    onSeekBackSecondsChanged: (Int) -> Unit,
-    onSeekForwardSecondsChanged: (Int) -> Unit,
-    onMediaButtonProfileChanged: (MediaButtonProfileMode) -> Unit,
-    onClearAheadCache: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp)) {
-            Text(
-                stringResource(R.string.offline_and_cache),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.download_on_playback))
-                    Text(
-                        stringResource(R.string.download_on_playback_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = downloadWholeEpisode,
-                    onCheckedChange = onDownloadWholeEpisodeChanged,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.ahead_cache_size, aheadCacheMegabytes))
-            Slider(
-                value = aheadCacheMegabytes.toFloat(),
-                onValueChange = { value ->
-                    onAheadCacheChanged((value / CACHE_STEP_MB).toInt() * CACHE_STEP_MB)
-                },
-                valueRange = 8f..256f,
-                steps = 30,
-            )
-            Text(
-                stringResource(R.string.cache_restart_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                stringResource(
-                    R.string.storage_usage,
-                    formatStorageBytes(aheadCacheBytes),
-                    formatStorageBytes(offlineDownloadBytes),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            OutlinedButton(
-                onClick = onClearAheadCache,
-                enabled = !aheadCacheClearPending,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) {
-                Text(
-                    stringResource(
-                        if (aheadCacheClearPending) {
-                            R.string.cache_clear_pending
-                        } else {
-                            R.string.clear_ahead_cache
-                        },
-                    ),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.seek_back_setting, seekBackSeconds))
-            Slider(
-                value = seekBackSeconds.toFloat(),
-                onValueChange = { onSeekBackSecondsChanged(it.roundToInt()) },
-                valueRange = 5f..55f,
-                steps = 49,
-            )
-            Text(stringResource(R.string.seek_forward_setting, seekForwardSeconds))
-            Slider(
-                value = seekForwardSeconds.toFloat(),
-                onValueChange = { onSeekForwardSecondsChanged(it.roundToInt()) },
-                valueRange = 5f..55f,
-                steps = 49,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.media_button_profile))
-            MediaButtonProfileDropdown(
-                selected = mediaButtonProfileMode,
-                onSelected = onMediaButtonProfileChanged,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MediaButtonProfileDropdown(
-    selected: MediaButtonProfileMode,
-    onSelected: (MediaButtonProfileMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        androidx.compose.material3.OutlinedTextField(
-            value = stringResource(selected.labelResource()),
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            MediaButtonProfileMode.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(mode.labelResource())) },
-                    onClick = {
-                        onSelected(mode)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-private fun MediaButtonProfileMode.labelResource(): Int = when (this) {
-    MediaButtonProfileMode.AUTO -> R.string.profile_auto
-    MediaButtonProfileMode.STANDARD -> R.string.profile_standard
-    MediaButtonProfileMode.JAECOO_J7 -> R.string.profile_jaecoo
-}
-
-private fun formatStorageBytes(bytes: Long): String = when {
-    bytes >= 1024L * 1024L * 1024L -> String.format(
-        Locale.getDefault(),
-        "%.1f GB",
-        bytes / (1024.0 * 1024.0 * 1024.0),
-    )
-    bytes >= 1024L * 1024L -> String.format(
-        Locale.getDefault(),
-        "%.1f MB",
-        bytes / (1024.0 * 1024.0),
-    )
-    bytes >= 1024L -> String.format(Locale.getDefault(), "%.1f KB", bytes / 1024.0)
-    else -> "$bytes B"
-}
-
-@Composable
-private fun DisplaySettingsCard(
-    themeMode: AppThemeMode,
-    interfaceProfile: InterfaceProfile,
-    onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp)) {
-            Text(
-                stringResource(R.string.appearance_and_layout),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                stringResource(R.string.appearance_temporary_help),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
-            )
-            ThemeModeDropdown(
-                selected = themeMode,
-                onSelected = onThemeModeChanged,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            InterfaceProfileDropdown(
-                selected = interfaceProfile,
-                onSelected = onInterfaceProfileChanged,
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ThemeModeDropdown(
-    selected: AppThemeMode,
-    onSelected: (AppThemeMode) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        androidx.compose.material3.OutlinedTextField(
-            value = stringResource(selected.labelResource()),
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            label = { Text(stringResource(R.string.theme_mode)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(expanded, { expanded = false }) {
-            AppThemeMode.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(mode.labelResource())) },
-                    onClick = {
-                        onSelected(mode)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InterfaceProfileDropdown(
-    selected: InterfaceProfile,
-    onSelected: (InterfaceProfile) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier,
-    ) {
-        androidx.compose.material3.OutlinedTextField(
-            value = stringResource(selected.labelResource()),
-            onValueChange = {},
-            readOnly = true,
-            singleLine = true,
-            label = { Text(stringResource(R.string.interface_profile)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(expanded, { expanded = false }) {
-            InterfaceProfile.entries.forEach { profile ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(profile.labelResource())) },
-                    onClick = {
-                        onSelected(profile)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-private fun AppThemeMode.labelResource(): Int = when (this) {
-    AppThemeMode.SYSTEM -> R.string.theme_system
-    AppThemeMode.LIGHT -> R.string.theme_light
-    AppThemeMode.DARK -> R.string.theme_dark
-}
-
-private fun InterfaceProfile.labelResource(): Int = when (this) {
-    InterfaceProfile.AUTO -> R.string.interface_auto
-    InterfaceProfile.STANDARD -> R.string.interface_standard
-    InterfaceProfile.LARGE -> R.string.interface_large
-    InterfaceProfile.JAECOO_J7 -> R.string.interface_jaecoo
 }
 
 @Composable

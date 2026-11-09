@@ -287,7 +287,14 @@ internal fun PodcastScreen(
                 podcasts = state.podcasts,
                 // The server's own verdict on a feed, once past its reporting threshold, wins.
                 freshness = state.podcastFreshness + state.serverFeedProblems.filterValues { it.reported }
-                    .mapValues { ru.e1173.nookast.data.PodcastFreshness.FEED_UNAVAILABLE },
+                    .mapValues { (id, _) ->
+                        // The phone still reads it: the feed is alive, only the server cannot update it.
+                        if (id in state.feedsReadByPhone) {
+                            ru.e1173.nookast.data.PodcastFreshness.SERVER_CANNOT_UPDATE
+                        } else {
+                            ru.e1173.nookast.data.PodcastFreshness.FEED_UNAVAILABLE
+                        }
+                    },
                 selectedPodcastId = highlighted,
                 sortMode = sortMode,
                 viewMode = viewMode,
@@ -343,6 +350,7 @@ internal fun PodcastScreen(
                 onUnsubscribe = onUnsubscribe,
                 onChangeFeedUrl = onChangeFeedUrl,
                 feedProblem = state.serverFeedProblems[podcastId],
+                feedReadByPhone = podcastId in state.feedsReadByPhone,
                 modifier = paneModifier,
                 settingsMenuInitiallyExpanded = settingsMenuInitiallyExpanded,
                 descriptionInitiallyFullyExpanded = descriptionInitiallyFullyExpanded,
@@ -523,7 +531,8 @@ private fun PodcastLibraryPanel(
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
-                        if (refreshing) {
+                        // A background refresh over a list already shown is quiet (user, 9.11.2026).
+                        if (refreshing && podcasts.isEmpty()) {
                             CircularProgressIndicator(
                                 Modifier.size(18.dp).semantics {
                                     contentDescription = refreshDescription
@@ -729,15 +738,10 @@ private fun PodcastSortMenu(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier
-                    .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
-                    .widthIn(min = 220.dp),
+                modifier = Modifier.widthIn(min = 220.dp),
                 shape = RoundedCornerShape(14.dp),
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
-                ),
+                containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
             ) {
                 ru.e1173.nookast.designsystem.InterfaceScaled {
                     PodcastSortMenuItems(sortMode) { mode ->
@@ -1033,6 +1037,7 @@ private fun PodcastDetailsPanel(
     onUnsubscribe: (Int) -> Unit,
     onChangeFeedUrl: (Int, String, (FeedUrlChangeResult) -> Unit) -> Unit = { _, _, _ -> },
     feedProblem: ru.e1173.nookast.data.remote.ServerFeedProblem? = null,
+    feedReadByPhone: Boolean = false,
     modifier: Modifier = Modifier,
     settingsMenuInitiallyExpanded: Boolean = false,
     descriptionInitiallyFullyExpanded: Boolean = false,
@@ -1254,7 +1259,7 @@ private fun PodcastDetailsPanel(
             }
             if (feedProblem?.reported == true) {
                 item(key = "feed-problem") {
-                    FeedProblemNotice(feedProblem, onChangeFeedUrl = { feedUrlDialog = true })
+                    FeedProblemPill(feedProblem, feedReadByPhone, onChangeFeedUrl = { feedUrlDialog = true })
                 }
             }
             if (detailsLoading) {
@@ -1612,16 +1617,10 @@ private fun PodcastSettingsMenu(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier.background(
-                    MaterialTheme.colorScheme.surfaceContainer,
-                    RoundedCornerShape(14.dp),
-                ).widthIn(min = if (largeControls) 300.dp else 220.dp),
+                modifier = Modifier.widthIn(min = if (largeControls) 300.dp else 220.dp),
                 shape = RoundedCornerShape(14.dp),
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
-                ),
+                containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+                border = BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
             ) {
                 ru.e1173.nookast.designsystem.InterfaceScaled {
                     PodcastSettingsMenuItems(
@@ -2312,6 +2311,7 @@ private fun FreshnessPill(freshness: ru.e1173.nookast.data.PodcastFreshness, mod
             ru.e1173.nookast.data.PodcastFreshness.QUIET_YEAR -> R.string.freshness_year
             ru.e1173.nookast.data.PodcastFreshness.ABANDONED -> R.string.freshness_abandoned
             ru.e1173.nookast.data.PodcastFreshness.FEED_UNAVAILABLE -> R.string.freshness_feed_unavailable
+            ru.e1173.nookast.data.PodcastFreshness.SERVER_CANNOT_UPDATE -> R.string.freshness_server_cannot_update
             ru.e1173.nookast.data.PodcastFreshness.ACTIVE -> return
         },
     )
@@ -2431,37 +2431,73 @@ private fun feedUrlResultText(result: FeedUrlChangeResult): String = when (resul
 }
 
 /**
- * The server cannot update this podcast's feed (PinePods 0.9.1+ «Feed problems»): why, since when,
- * and the way out — another RSS address (user, 6.11.2026).
+ * The server cannot update this podcast's feed (PinePods 0.9.1+ «Feed problems»), as a capsule in
+ * the card like the player's source chip (user, 6.11.2026: a red banner fell out of the design).
+ * When the phone still reads the feed, the feed is alive and only the server is stuck; a tap
+ * explains why and offers another RSS address.
  */
 @Composable
-private fun FeedProblemNotice(problem: ru.e1173.nookast.data.remote.ServerFeedProblem, onChangeFeedUrl: () -> Unit) {
+private fun FeedProblemPill(
+    problem: ru.e1173.nookast.data.remote.ServerFeedProblem,
+    readByPhone: Boolean,
+    onChangeFeedUrl: () -> Unit,
+) {
     val colors = ru.e1173.nookast.designsystem.LocalNookastColors.current
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    val reason = stringResource(feedErrorText(problem.kind))
+    var explain by remember { mutableStateOf(false) }
+    val coral = if (colors.isDark) Color(0xFFFF6E61) else Color(0xFFED6575)
+    val tone = if (readByPhone) colors.textSecondary else coral
     val since = problem.failingSinceEpochMs?.let {
         java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
             .format(java.time.format.DateTimeFormatter.ofPattern("d MMMM", locale))
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
-    ) {
-        Text(
-            if (since != null) {
-                stringResource(R.string.feed_problem_since, reason, since)
-            } else {
-                stringResource(R.string.feed_problem, reason)
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.textPrimary,
-        )
-        androidx.compose.material3.TextButton(onClick = onChangeFeedUrl, modifier = Modifier.align(Alignment.End)) {
-            Text(stringResource(R.string.podcast_change_feed_url))
+    val label = stringResource(if (readByPhone) R.string.freshness_server_cannot_update else R.string.freshness_feed_unavailable)
+    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(
+            Modifier
+                .height(30.dp)
+                .clip(CircleShape)
+                .background(colors.textSecondary.copy(alpha = if (colors.isDark) 0.12f else 0.09f))
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) { explain = true }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Box(Modifier.size(7.dp).background(if (readByPhone) Color(0xFFE0A030) else coral, CircleShape))
+            Text(
+                if (since != null) "$label · $since" else label,
+                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = tone,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.ChevronRight, null, tint = tone, modifier = Modifier.size(14.dp))
         }
+    }
+    if (explain) {
+        ru.e1173.nookast.designsystem.ScaledAlertDialog(
+            onDismissRequest = { explain = false },
+            title = { Text(label) },
+            text = {
+                Text(
+                    when {
+                        problem.privateAddress -> stringResource(R.string.feed_problem_private_address)
+                        readByPhone -> stringResource(R.string.feed_problem_server_only, stringResource(feedErrorText(problem.kind)))
+                        else -> stringResource(R.string.feed_problem, stringResource(feedErrorText(problem.kind)))
+                    },
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    explain = false
+                    onChangeFeedUrl()
+                }) { Text(stringResource(R.string.podcast_change_feed_url)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { explain = false }) { Text(stringResource(R.string.feed_url_done)) }
+            },
+        )
     }
 }
 

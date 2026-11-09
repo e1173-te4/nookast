@@ -11,6 +11,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # By hand on a v* tag when its push started no run: gh workflow run release.yml --ref v<version>.
+  # Only tags may use the "release" environment, and the version step refuses any other ref.
+  workflow_dispatch:
 
 permissions:
   contents: write

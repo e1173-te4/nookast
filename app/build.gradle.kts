@@ -35,10 +35,10 @@ android {
         applicationId = "ru.e1173.nookast"
         minSdk = 26
         targetSdk = 37
-        versionCode = 68
-        versionName = "1.2.3"
+        versionCode = 69
+        versionName = "1.2.4"
         // The APK name the user sees in chat (APK-3.12); shown in Settings → About.
-        buildConfigField("String", "DELIVERY", "\"1.2.3\"")
+        buildConfigField("String", "DELIVERY", "\"1.2.4\"")
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("boolean", "GIT_DIRTY", gitDirty.toString())
         // Over-the-air updates from the public releases (user, 2.11.2026): release builds only. A local

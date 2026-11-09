@@ -2845,6 +2845,9 @@ private fun UpNextRow(
                 DropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                    containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
                 ) { ru.e1173.nookast.designsystem.InterfaceScaled {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.move_up)) },

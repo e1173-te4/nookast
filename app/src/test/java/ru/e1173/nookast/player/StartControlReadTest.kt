@@ -6,6 +6,14 @@ import org.junit.Test
 /** docs/SYNC.md §5.10 (S45, S46, S47). */
 class StartControlReadTest {
     @Test
+    fun `a resume after this device's own pause only offers the server position`() {
+        assertEquals(
+            StartReadAction.Offer(300_000),
+            decideStartRead(2_400_000, 300_000, false, false, elapsedSinceStartMs = 1_000, durationMs = 3_600_000, resumedHere = true),
+        )
+    }
+
+    @Test
     fun serverAheadWithinTheWindowJumps() {
         assertEquals(
             StartReadAction.Jump(toMs = 2_480_000, fromMs = 603_000),

@@ -56,7 +56,10 @@ internal object PlaybackMediaCache {
     /** Upper bound on time ahead; the byte budget usually stops loading earlier. */
     const val MAX_AHEAD_MS = 60 * 60 * 1_000
     private const val BYTES_PER_MEGABYTE = 1024 * 1024
-    private const val BACK_BUFFER_BYTES = 32 * BYTES_PER_MEGABYTE
+
+    // 30 minutes of a 320 kbps episode (RGC: 144 MB an hour); 32 MB covered only ~140 kbps, and the rest
+    // of the back buffer ate the «ahead» budget (user, 9.11.2026: long loading in the car).
+    private const val BACK_BUFFER_BYTES = 72 * BYTES_PER_MEGABYTE
     private const val MIN_HEAP_MB = 128
     private const val HEAP_SHARE_DIVISOR = 3
 }

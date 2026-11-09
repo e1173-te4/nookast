@@ -89,7 +89,6 @@ import ru.e1173.nookast.diagnostics.DeviceSnapshot
 import ru.e1173.nookast.player.PlaybackViewModel
 import ru.e1173.nookast.preferences.AppThemeMode
 import ru.e1173.nookast.preferences.DisplayPreferencesState
-import ru.e1173.nookast.preferences.InterfaceProfile
 import ru.e1173.nookast.preferences.PodcastSortMode
 import ru.e1173.nookast.preferences.PodcastViewMode
 import ru.e1173.nookast.preferences.resolveInterfacePresentation
@@ -114,7 +113,6 @@ fun NookastRoot(
     playbackViewModel: PlaybackViewModel,
     displayPreferences: DisplayPreferencesState,
     onThemeModeChanged: (AppThemeMode) -> Unit,
-    onInterfaceProfileChanged: (InterfaceProfile) -> Unit,
     onPodcastSortModeChanged: (PodcastSortMode) -> Unit,
     onPodcastViewModeChanged: (PodcastViewMode) -> Unit,
     onPodcastDescriptionCollapsedChanged: (Int, Boolean) -> Unit,
@@ -157,7 +155,7 @@ fun NookastRoot(
     var initialPlayerTab by rememberSaveable { mutableStateOf(NowPlayingTab.PLAYBACK) }
     val currentDensity = LocalDensity.current
     val interfacePresentation = resolveInterfacePresentation(
-        profile = displayPreferences.interfaceProfile,
+        profile = ru.e1173.nookast.preferences.InterfaceProfile.AUTO,
         automaticLargeControls = snapshot.prefersLargeControls,
         automaticFontScale = snapshot.preferredFontScale,
         systemFontScale = snapshot.fontScale,
@@ -648,7 +646,6 @@ fun NookastRoot(
                             onAheadCacheChanged = playerSettingsViewModel::setAheadCacheMegabytes,
                             onSeekBackSecondsChanged = playbackViewModel::setSeekBackSeconds,
                             onSeekForwardSecondsChanged = playbackViewModel::setSeekForwardSeconds,
-                            onMediaButtonProfileChanged = playerSettingsViewModel::setMediaButtonProfileMode,
                             onPlaybackStartQueuePositionChanged =
                                 playerSettingsViewModel::setPlaybackStartQueuePosition,
                             onManualQueuePositionChanged = playerSettingsViewModel::setManualQueuePosition,
@@ -658,9 +655,7 @@ fun NookastRoot(
                                 playerSettingsViewModel::setQueueSwipeEndAction,
                             onClearAheadCache = queueViewModel::requestAheadCacheClear,
                             themeMode = displayPreferences.themeMode,
-                            interfaceProfile = displayPreferences.interfaceProfile,
                             onThemeModeChanged = onThemeModeChanged,
-                            onInterfaceProfileChanged = onInterfaceProfileChanged,
                             selectedPodcastId = (route as? Route.Podcast)?.podcastId,
                             podcastSortMode = displayPreferences.podcastSortMode,
                             podcastViewMode = displayPreferences.podcastViewMode,
@@ -1039,7 +1034,7 @@ private fun LoginCard(
     var mfaCode by rememberSaveable { mutableStateOf("") }
     var httpConfirmHost by rememberSaveable { mutableStateOf<String?>(null) }
     httpConfirmHost?.let { host ->
-        androidx.compose.material3.AlertDialog(
+        ru.e1173.nookast.designsystem.ScaledAlertDialog(
             onDismissRequest = { httpConfirmHost = null },
             title = { Text(stringResource(R.string.http_confirm_title)) },
             text = { Text(stringResource(R.string.http_confirm_text, host.ifBlank { "…" })) },
@@ -1291,7 +1286,7 @@ private fun DeviceCard(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            if (snapshot.isJaecooJ7HeadUnit) {
+            if (snapshot.isHeadUnit) {
                 stringResource(R.string.jaecoo_profile_detected)
             } else if (snapshot.prefersLargeControls) {
                 stringResource(R.string.large_screen_detected)

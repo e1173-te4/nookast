@@ -21,6 +21,8 @@ data class ServerFeedProblem(
     val failingSinceEpochMs: Long?,
     /** Past the server's own reporting threshold (a day, or three tries for a feed that is gone). */
     val reported: Boolean,
+    /** The server refused the address itself: it resolves to a home-network address (0.9.1+ guard). */
+    val privateAddress: Boolean = false,
 )
 
 /**
@@ -123,6 +125,7 @@ internal fun parseFeedProblems(body: String): List<ServerFeedProblem> {
             },
             failingSinceEpochMs = item.optLong("failing_since", 0L).takeIf { it > 0 }?.times(1_000),
             reported = item.optBoolean("reported"),
+            privateAddress = item.optString("error").contains("private/reserved address", ignoreCase = true),
         )
     }
 }

@@ -108,6 +108,16 @@ class PinePodsSyncApi(
         )
     }
 
+    /** The server's listening history, newest first ([ServerNowPlaying]). */
+    fun listened(session: AuthSession): List<ListenedRow> {
+        val url = endpoint(session, "user_history/${session.userId}")
+        val body = client.newCall(authorized(session, url).get().build()).execute().use { response ->
+            if (!response.isSuccessful) throw SyncCallException(SyncFailure.TRANSIENT, httpCode = response.code, excerpt = "history ${response.code}")
+            response.body.string()
+        }
+        return ServerNowPlaying.parse(body)
+    }
+
     fun queue(session: AuthSession): List<ServerQueueRow> {
         val url = endpoint(session, "get_queued_episodes").newBuilder()
             .addQueryParameter("user_id", session.userId.toString())

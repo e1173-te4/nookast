@@ -208,10 +208,15 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                     val onScreen = android.app.ActivityManager.RunningAppProcessInfo()
                         .also(android.app.ActivityManager::getMyMemoryState)
                         .importance <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                    UpdateLog.record(
+                        context,
+                        "session pending user action onScreen=$onScreen confirm=" +
+                            (confirmation?.resolveActivity(context.packageManager)?.flattenToShortString() ?: "none"),
+                    )
                     confirmation?.let {
                         if (onScreen) {
-                            runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                                .onFailure { _ -> UpdateNotifications.confirm(context, it) }
+                            // The visible activity starts it (user, 6.11.2026): not this receiver.
+                            Updater.requestConfirmation(it)
                         } else {
                             // Never a confirmation out of the background: it waits for the user.
                             Updater.markNeedsConfirmation(context)
@@ -219,8 +224,15 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                         }
                     }
                 }
-                PackageInstaller.STATUS_SUCCESS -> UpdateNotifications.cancel(context)
-                else -> Updater.reportInstallFailure()
+                PackageInstaller.STATUS_SUCCESS -> {
+                    UpdateLog.record(context, "session success")
+                    UpdateNotifications.cancel(context)
+                }
+                else -> Updater.reportInstallFailure(
+                    context,
+                    intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE),
+                    intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE),
+                )
             }
         }
     }

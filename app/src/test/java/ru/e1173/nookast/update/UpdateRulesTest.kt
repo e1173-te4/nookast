@@ -49,6 +49,91 @@ class UpdateRulesTest {
     }
 
     @Test
+    fun `a saved update is named after the release and recognised as ours`() {
+        assertEquals("nookast-1.2.4.apk", SavedUpdate.fileName("v1.2.4"))
+        assertEquals("nookast-1.3.0.apk", SavedUpdate.fileName("1.3.0"))
+        assertTrue(SavedUpdate.isOurs("nookast-1.2.4.apk"))
+        assertFalse(SavedUpdate.isOurs("nookast-.apk"))
+        assertFalse(SavedUpdate.isOurs("other-1.2.4.apk"))
+        assertFalse(SavedUpdate.isOurs("nookast-1.2.4.apk.sha256"))
+        assertEquals("AB:0C:FF", SavedUpdate.fingerprint("ab0cff"))
+    }
+
+    @Test
+    fun `saving is offered in settings for a known version and in the offer after the other way failed`() {
+        assertTrue(SavedUpdate.showInSettings("v1.2.4", downloading = false))
+        assertFalse(SavedUpdate.showInSettings(null, downloading = false))
+        assertFalse(SavedUpdate.showInSettings("v1.2.4", downloading = true))
+        assertTrue(SavedUpdate.showInOffer("v1.2.4", classicFailed = true, downloading = false))
+        assertFalse(SavedUpdate.showInOffer("v1.2.4", classicFailed = false, downloading = false))
+    }
+
+    @Test
+    fun `android 11 and a failed session take the classic installer`() {
+        assertEquals(InstallPath.CLASSIC, InstallPaths.choose(sdkInt = 30, sessionFailed = false))
+        assertEquals(InstallPath.CLASSIC, InstallPaths.choose(sdkInt = 26, sessionFailed = false))
+        assertEquals(InstallPath.SESSION, InstallPaths.choose(sdkInt = 31, sessionFailed = false))
+        assertEquals(InstallPath.CLASSIC, InstallPaths.choose(sdkInt = 37, sessionFailed = true))
+    }
+
+    @Test
+    fun `a permission screen that never took the foreground counts as not shown`() {
+        assertTrue(InstallPaths.permissionScreenOpened(requestedAtMs = 1_000, pausedAtMs = 1_300))
+        assertFalse(InstallPaths.permissionScreenOpened(requestedAtMs = 1_000, pausedAtMs = null))
+        assertFalse(InstallPaths.permissionScreenOpened(requestedAtMs = 1_000, pausedAtMs = 2_500))
+        assertFalse(InstallPaths.permissionScreenOpened(requestedAtMs = 1_000, pausedAtMs = 900))
+    }
+
+    @Test
+    fun `the classic installer answer reads as installed, cancelled or failed`() {
+        assertEquals(ClassicOutcome.INSTALLED, InstallPaths.classicOutcome(-1))
+        assertEquals(ClassicOutcome.CANCELLED, InstallPaths.classicOutcome(0))
+        assertEquals(ClassicOutcome.FAILED, InstallPaths.classicOutcome(1))
+    }
+
+    @Test
+    fun `check now only offers and the background downloads quietly on unmetered networks`() {
+        assertEquals(CheckFollowUp.OFFER, UpdateFlow.afterCheck(manual = true, mode = UpdateMode.AUTOMATIC, metered = false))
+        assertEquals(CheckFollowUp.OFFER, UpdateFlow.afterCheck(manual = true, mode = UpdateMode.OFF, metered = true))
+        assertEquals(CheckFollowUp.DOWNLOAD_QUIETLY, UpdateFlow.afterCheck(manual = false, mode = UpdateMode.AUTOMATIC, metered = false))
+        assertEquals(CheckFollowUp.DOWNLOAD_QUIETLY, UpdateFlow.afterCheck(manual = false, mode = UpdateMode.NOTIFY, metered = false))
+        assertEquals(CheckFollowUp.NOTHING, UpdateFlow.afterCheck(manual = false, mode = UpdateMode.AUTOMATIC, metered = true))
+        assertEquals(CheckFollowUp.NOTHING, UpdateFlow.afterCheck(manual = false, mode = UpdateMode.OFF, metered = false))
+    }
+
+    @Test
+    fun `the offer installs a downloaded file and warns about mobile data and playback`() {
+        val fresh = UpdateFlow.offer("v1.2.4", 4_400_000, downloaded = false, metered = true, playing = true)!!
+        assertEquals(OfferAction.DOWNLOAD_AND_INSTALL, fresh.action)
+        assertTrue(fresh.metered)
+        assertTrue(fresh.stopsPlayback)
+
+        val ready = UpdateFlow.offer("v1.2.4", 4_400_000, downloaded = true, metered = true, playing = false)!!
+        assertEquals(OfferAction.INSTALL, ready.action)
+        assertFalse(ready.metered)
+        assertFalse(ready.stopsPlayback)
+        assertNull(UpdateFlow.offer(null, 0, downloaded = false, metered = false, playing = false))
+    }
+
+    @Test
+    fun `the first public release reads as GitHub serves it`() {
+        // releases/latest of e1173-te4/nookast as published on 5.11.2026.
+        val json = javaClass.classLoader!!.getResource("update/releases-latest-1.2.3.json")!!.readText()
+
+        val info = ReleaseRules.parseLatest(json)!!
+
+        assertEquals("v1.2.3", info.tag)
+        assertEquals(listOf(1, 2, 3), info.version)
+        assertEquals("nookast-1.2.3.apk", info.apkName)
+        assertEquals(4_418_174L, info.apkSize)
+        assertTrue(info.apkUrl.startsWith("https://github.com/e1173-te4/nookast/releases/download/v1.2.3/"))
+        assertTrue(info.shaUrl.endsWith("nookast-1.2.3.apk.sha256"))
+        assertTrue(ReleaseRules.notesOf(info.body, "ru").isNotBlank())
+        assertTrue(ReleaseRules.notesOf(info.body, "en").isNotBlank())
+        assertFalse(ReleaseRules.notesOf(info.body, "en").contains("nookast-1.2.3.apk"))
+    }
+
+    @Test
     fun `a missing language falls back to the other and an unmarked body to its head`() {
         assertEquals("Только по-русски.", ReleaseRules.notesOf("<!-- lang:ru -->\nТолько по-русски.\n---\nabc  x.apk", "en"))
         assertEquals("Old notes.", ReleaseRules.notesOf("Old notes.\n---\nabc  x.apk", "ru"))

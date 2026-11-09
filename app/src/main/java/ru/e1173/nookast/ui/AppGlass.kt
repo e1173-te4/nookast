@@ -79,7 +79,9 @@ internal fun Modifier.appGlass(
             tints = listOf(HazeTint(background.copy(alpha = if (colors.isDark || veil == 0f) veil else veil + 0.1f))),
             blurRadius = blurRadius,
             noiseFactor = 0f,
-            fallbackTint = HazeTint(background.copy(alpha = 0.94f)),
+            // Android 11 and older: no blur, a lighter veil of the screen's own colour (1.2.1 used 0.94, which
+            // read darker than the cover-lit screen, user 3.11.2026).
+            fallbackTint = HazeTint(background.copy(alpha = 0.86f)),
         ),
     ) {
         this.mask = mask
@@ -88,9 +90,9 @@ internal fun Modifier.appGlass(
         // The blur reads the content at full resolution (user, 2.11.2026: covers and bold titles
         // shimmered under the glass while scrolling, as a downscaled input steps from pixel to pixel).
         inputScale = HazeInputScale.None
-        // Real blur before Android 12 too (RenderScript): the head unit (Android 11) drew the glass as an
-        // opaque tint of the base colour, darker than the cover-lit screen (user, 3.11.2026).
-        blurEnabled = true
+        // Blur only from Android 12. The RenderScript blur of 1.2.2 on Android 11 drew banded halos of the
+        // wrong shape with hard dark steps in the light theme (user, 9.11.2026); the veil replaces it there.
+        blurEnabled = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
     }
 }
 

@@ -218,3 +218,20 @@ private const val NOT_IN_QUEUE = -1
 internal fun MediaItem.artworkSourceUrl(): String =
     mediaMetadata.extras?.getString(EXTRA_ARTWORK_URL)
         ?: mediaMetadata.artworkUri?.toString().orEmpty()
+
+/** An episode known only from the server's history (listened on another device). */
+internal fun ru.e1173.nookast.core.sync.ListenedRow.toEntry() = QueueListEntry(
+    episodeId = episodeId,
+    queuePosition = NOT_IN_QUEUE,
+    episodeTitle = title,
+    podcastName = podcastName,
+    artworkUrl = artworkUrl,
+    mediaUrl = mediaUrl,
+    durationSeconds = durationSeconds?.toInt(),
+    listenDurationSeconds = positionSeconds.toDouble(),
+    completed = completed,
+    description = "",
+    publishedAt = "",
+    downloaded = null,
+    refreshedAtEpochMs = null,
+)

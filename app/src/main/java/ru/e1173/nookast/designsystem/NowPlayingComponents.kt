@@ -411,8 +411,13 @@ fun NookTimeline(
     }
 }
 
-/** A chapter boundary within [threshold] of [fraction] pulls the thumb onto itself. */
+/**
+ * A chapter boundary within [threshold] of [fraction] pulls the thumb onto itself. The very start
+ * pulls too, and wins over a boundary as near (user, 9.11.2026: a short intro chapter made 00:00
+ * unreachable, the thumb kept landing on its end).
+ */
 internal fun snapToChapterBoundary(fraction: Float, boundaries: List<Float>, threshold: Float): Float {
+    if (fraction <= threshold) return 0f
     val nearest = boundaries.minByOrNull { kotlin.math.abs(it - fraction) } ?: return fraction
     return if (kotlin.math.abs(nearest - fraction) <= threshold) nearest else fraction
 }

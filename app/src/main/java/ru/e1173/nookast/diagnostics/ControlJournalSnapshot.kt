@@ -14,9 +14,6 @@ import androidx.core.content.ContextCompat
 import java.util.Locale
 import ru.e1173.nookast.BuildConfig
 import ru.e1173.nookast.player.currentMediaDeviceIdentity
-import ru.e1173.nookast.player.PlaybackPreferences
-import ru.e1173.nookast.player.detectBuiltInMediaProfileId
-import ru.e1173.nookast.preferences.readStoredInterfaceProfile
 
 /**
  * Device facts written once when journal recording starts: what the head unit reports about
@@ -47,14 +44,7 @@ internal object ControlJournalSnapshot {
         val displayManager = app.getSystemService(DisplayManager::class.java)
         displayManager?.displays?.forEach { display -> appendLine(describeDisplay(display)) }
 
-        val interfaceProfile = readStoredInterfaceProfile(app)
-        val identity = currentMediaDeviceIdentity(app)
-        val buttonMode = PlaybackPreferences(app).mediaButtonProfileMode
-        appendLine("ui profile stored=$interfaceProfile")
-        appendLine(
-            "media buttons stored=$buttonMode autoDetected=" +
-                (detectBuiltInMediaProfileId(identity) ?: "none"),
-        )
+        appendLine("head unit=" + (ru.e1173.nookast.player.KnownHeadUnits.detect(currentMediaDeviceIdentity(app))?.mediaProfileId ?: "none"))
 
         val notificationsEnabled = NotificationManagerCompat.from(app).areNotificationsEnabled()
         val postGranted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(

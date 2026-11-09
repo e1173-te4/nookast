@@ -23,6 +23,12 @@ enum class PodcastFreshness {
 
     /** The feed itself fails to load (gone, moved without a redirect, no longer RSS). */
     FEED_UNAVAILABLE,
+
+    /**
+     * The server cannot update the feed while the phone reads it (user, 6.11.2026: PinePods 0.9.1+
+     * refuses feeds on a home-network address, such as an audiobookshelf behind split DNS).
+     */
+    SERVER_CANNOT_UPDATE,
 }
 
 /** What the app knows about one subscription's feed. */
@@ -110,3 +116,13 @@ internal fun podcastFreshnessOf(
             ?.let { podcast.podcastId to it }
     }.toMap()
 }
+
+/** Podcasts whose feed the phone read without error in the last [days] days. */
+internal fun feedsReadLately(
+    states: List<ru.e1173.nookast.data.local.PodcastRefreshStateEntity>,
+    nowEpochMs: Long = System.currentTimeMillis(),
+    days: Long = 3,
+): Set<Int> = states.filter { state ->
+    state.podcastId != null && state.lastErrorCategory == null &&
+        (state.lastSuccessAtEpochMs ?: 0L) >= nowEpochMs - days * 24 * 60 * 60 * 1000
+}.mapNotNull { it.podcastId }.toSet()

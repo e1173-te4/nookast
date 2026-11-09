@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the exported control journal is shareable (2b.1). -->
+<!-- The exported control journal (2b.1) and the verified update for the system installer. -->
 <paths>
     <cache-path name="diagnostics" path="diagnostics-export/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

@@ -28,7 +28,7 @@ internal data class PodcastSearchUiState(
     /** Feeds being added and feeds added in this search, by URL. */
     val adding: Set<String> = emptySet(),
     val added: Set<String> = emptySet(),
-    val addFailed: Set<String> = emptySet(),
+    val addFailed: Map<String, ru.e1173.nookast.data.remote.AddFailure> = emptyMap(),
     /** The found podcast whose card is open (user, 2.11.2026), and what its feed told. */
     val opened: FoundPodcast? = null,
     val preview: FeedPreview? = null,
@@ -79,15 +79,18 @@ internal class PodcastSearchViewModel(application: Application) : AndroidViewMod
         if (feed in _state.value.adding || feed in _state.value.added) return
         _state.update { it.copy(adding = it.adding + feed, addFailed = it.addFailed - feed) }
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                val current = session.load() ?: return@withContext false
-                runCatching { client.add(current, podcast) }.isSuccess
+            val failure = withContext(Dispatchers.IO) {
+                val current = session.load() ?: return@withContext ru.e1173.nookast.data.remote.AddFailure.NETWORK
+                runCatching { client.add(current, podcast) }.exceptionOrNull()?.let { error ->
+                    (error as? ru.e1173.nookast.data.remote.AddPodcastFailure)?.kind ?: ru.e1173.nookast.data.remote.AddFailure.REFUSED
+                }
             }
+            val ok = failure == null
             _state.update {
                 it.copy(
                     adding = it.adding - feed,
                     added = if (ok) it.added + feed else it.added,
-                    addFailed = if (ok) it.addFailed else it.addFailed + feed,
+                    addFailed = if (failure == null) it.addFailed else it.addFailed + (feed to failure),
                 )
             }
             if (ok) onAdded()

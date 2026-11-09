@@ -5,6 +5,15 @@ import org.junit.Test
 
 class TimelineScrubTest {
     @Test
+    fun `the very start wins over a short first chapter`() {
+        // A 20-second intro of an hour: its end lies within the snap distance of 00:00.
+        val boundaries = listOf(20f / 3600f, 0.3f)
+        assertEquals(0f, snapToChapterBoundary(0f, boundaries, threshold = 0.01f), 0f)
+        assertEquals(0f, snapToChapterBoundary(0.004f, boundaries, threshold = 0.01f), 0f)
+        assertEquals(0.3f, snapToChapterBoundary(0.305f, boundaries, threshold = 0.01f), 0f)
+    }
+
+    @Test
     fun `thumb sticks to a nearby chapter boundary only`() {
         val boundaries = listOf(0.25f, 0.5f)
         assertEquals(0.25f, snapToChapterBoundary(0.26f, boundaries, threshold = 0.02f))

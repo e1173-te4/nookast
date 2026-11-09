@@ -86,7 +86,6 @@ class MainActivity : ComponentActivity() {
                     playbackViewModel = playbackViewModel,
                     displayPreferences = displayPreferences,
                     onThemeModeChanged = appPreferencesViewModel::setThemeMode,
-                    onInterfaceProfileChanged = appPreferencesViewModel::setInterfaceProfile,
                     onPodcastSortModeChanged = appPreferencesViewModel::setPodcastSortMode,
                     onPodcastViewModeChanged = appPreferencesViewModel::setPodcastViewMode,
                     onPodcastDescriptionCollapsedChanged =

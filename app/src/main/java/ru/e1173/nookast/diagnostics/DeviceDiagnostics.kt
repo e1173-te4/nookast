@@ -39,6 +39,7 @@ internal object DeviceDiagnostics {
             Section("power", power(app)),
             Section("memory", memory(app)),
             Section("library", library(app, nowMs)),
+            Section("updates", ru.e1173.nookast.update.UpdateDiagnostics.lines(context)),
         )
     }
 

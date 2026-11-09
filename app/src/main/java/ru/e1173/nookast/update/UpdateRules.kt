@@ -197,3 +197,111 @@ object InstallPolicy {
     fun silentInstallPossible(sdk: Int, ownPackage: String, installer: String?, updateOwner: String?): Boolean =
         sdk >= 31 && installer == ownPackage && (updateOwner == null || updateOwner == ownPackage)
 }
+
+/** What follows a check that found a newer release. */
+enum class CheckFollowUp {
+    /** The background check of the automatic or notify mode on an unmetered network. */
+    DOWNLOAD_QUIETLY,
+
+    /** «Check now»: the user is asked first, nothing is downloaded without consent (user, 5.11.2026). */
+    OFFER,
+    NOTHING,
+}
+
+enum class OfferAction { DOWNLOAD_AND_INSTALL, INSTALL }
+
+/** «Version X is available · size», what the one consent button does, and what to warn about. */
+data class UpdateOffer(
+    val tag: String,
+    val sizeBytes: Long,
+    val action: OfferAction,
+    /** The download would go over mobile data. */
+    val metered: Boolean,
+    /** Installing restarts the app and stops what plays; said once, in the offer itself. */
+    val stopsPlayback: Boolean,
+)
+
+object UpdateFlow {
+    fun afterCheck(manual: Boolean, mode: UpdateMode, metered: Boolean): CheckFollowUp = when {
+        manual -> CheckFollowUp.OFFER
+        mode == UpdateMode.OFF || metered -> CheckFollowUp.NOTHING
+        else -> CheckFollowUp.DOWNLOAD_QUIETLY
+    }
+
+    /** The offer for [tag], or null when nothing newer is known. A downloaded file is only installed. */
+    fun offer(tag: String?, sizeBytes: Long, downloaded: Boolean, metered: Boolean, playing: Boolean): UpdateOffer? =
+        tag?.let {
+            UpdateOffer(
+                tag = it,
+                sizeBytes = sizeBytes,
+                action = if (downloaded) OfferAction.INSTALL else OfferAction.DOWNLOAD_AND_INSTALL,
+                metered = metered && !downloaded,
+                stopsPlayback = playing,
+            )
+        }
+}
+
+/** How the verified APK reaches Android's installer. */
+enum class InstallPath {
+    /** A package installer session: silent self-updates are possible from Android 12 (API 31). */
+    SESSION,
+
+    /**
+     * The system installer screen with the file, as a file manager opens it (user, 6.11.2026: on an
+     * Android 11 device the session's confirmation button did not react, a file manager worked).
+     */
+    CLASSIC,
+}
+
+enum class ClassicOutcome { INSTALLED, CANCELLED, FAILED }
+
+object InstallPaths {
+    /** Android 11 and older gain nothing from a session; after a failed session the classic screen is the way. */
+    fun choose(sdkInt: Int, sessionFailed: Boolean): InstallPath =
+        if (sdkInt <= 30 || sessionFailed) InstallPath.CLASSIC else InstallPath.SESSION
+
+    /**
+     * Whether Android's «install unknown apps» screen really opened: the app must have left the
+     * foreground within [timeoutMs] of the request (a trimmed system shell may show nothing at all).
+     */
+    fun permissionScreenOpened(requestedAtMs: Long, pausedAtMs: Long?, timeoutMs: Long = 1_000): Boolean =
+        pausedAtMs != null && pausedAtMs >= requestedAtMs && pausedAtMs - requestedAtMs <= timeoutMs
+
+    /**
+     * The installer's answer to ACTION_INSTALL_PACKAGE with EXTRA_RETURN_RESULT: OK, CANCELED, or
+     * FIRST_USER with an install result code. A successful install usually replaces the app before
+     * any answer arrives.
+     */
+    fun classicOutcome(resultCode: Int): ClassicOutcome = when (resultCode) {
+        RESULT_OK -> ClassicOutcome.INSTALLED
+        RESULT_CANCELED -> ClassicOutcome.CANCELLED
+        else -> ClassicOutcome.FAILED
+    }
+
+    private const val RESULT_OK = -1
+    private const val RESULT_CANCELED = 0
+}
+
+/**
+ * The last way (user, 6.11.2026: «if nothing helps, save the apk in Downloads, the user opens it»):
+ * the verified update as a file in Downloads, also handy to carry to another device.
+ */
+object SavedUpdate {
+    const val PREFIX = "nookast-"
+
+    /** `nookast-1.2.4.apk` for the release tag `v1.2.4`. */
+    fun fileName(tag: String): String = PREFIX + tag.trim().removePrefix("v").removePrefix("V") + ".apk"
+
+    /** Whether a file name is one of this app's saved updates. */
+    fun isOurs(name: String): Boolean =
+        name.startsWith(PREFIX) && name.endsWith(".apk") && name.length > PREFIX.length + 4
+
+    /** Settings always offer it while a newer version is known; the offer after the other way failed. */
+    fun showInSettings(available: String?, downloading: Boolean): Boolean = available != null && !downloading
+
+    fun showInOffer(available: String?, classicFailed: Boolean, downloading: Boolean): Boolean =
+        available != null && classicFailed && !downloading
+
+    /** The certificate fingerprint as people compare it: pairs of upper-case hex, separated by colons. */
+    fun fingerprint(sha256Hex: String): String = sha256Hex.uppercase().chunked(2).joinToString(":")
+}

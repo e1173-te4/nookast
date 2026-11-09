@@ -22,29 +22,25 @@ data class DeviceSnapshot(
     val density: Float,
     val fontScale: Float,
 ) {
-    val isJaecooJ7HeadUnit: Boolean
-        get() {
-            val identity = listOf(manufacturer, brand, model, device, product)
-            val identifiesJaecoo = identity.any { it.contains("jaecoo", ignoreCase = true) }
-            val identifiesDesaySv = identity.any { it.contains("desaysv", ignoreCase = true) }
-            val matchesKnownPanel = windowWidthPx == 1_440 && windowHeightPx == 1_920 &&
-                densityDpi == 160
+    /** The known car head unit this is ([ru.e1173.nookast.player.KnownHeadUnits]), if any. */
+    val headUnit: ru.e1173.nookast.player.KnownHeadUnit?
+        get() = ru.e1173.nookast.player.KnownHeadUnits.detect(
+            ru.e1173.nookast.player.MediaDeviceIdentity(manufacturer, brand, model, device, product, windowWidthPx, windowHeightPx, densityDpi),
+        )
 
-            return identifiesJaecoo || (identifiesDesaySv && matchesKnownPanel)
-        }
+    val isHeadUnit: Boolean get() = headUnit != null
 
     val prefersLargeControls: Boolean
-        get() = isJaecooJ7HeadUnit || (screenWidthDp >= 900 && screenHeightDp >= 1_100)
+        get() = isHeadUnit || (screenWidthDp >= 900 && screenHeightDp >= 1_100)
 
     val preferredFontScale: Float
-        get() = when {
-            isJaecooJ7HeadUnit -> maxOf(fontScale, 1.25f)
+        get() = headUnit?.let { maxOf(fontScale, it.minFontScale) } ?: when {
             prefersLargeControls -> maxOf(fontScale, 1.12f)
             else -> fontScale
         }
 
     val preferredDensityScale: Float
-        get() = if (isJaecooJ7HeadUnit) 1.5f else 1f
+        get() = headUnit?.densityScale ?: 1f
 
     fun asReport(): String = buildString {
         appendLine("Manufacturer: $manufacturer")
@@ -54,11 +50,7 @@ data class DeviceSnapshot(
         appendLine("Product: $product")
         appendLine("Android: $androidRelease (SDK $sdkInt)")
         appendLine(
-            "Profile: " + if (isJaecooJ7HeadUnit) {
-                "JAECOO J7 14.8 / DesaySV"
-            } else {
-                "adaptive"
-            },
+            "Profile: " + (headUnit?.label ?: "adaptive"),
         )
         appendLine("Window px: ${windowWidthPx}x$windowHeightPx")
         appendLine("Window dp: ${screenWidthDp}x$screenHeightDp")

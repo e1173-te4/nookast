@@ -26,12 +26,19 @@ internal fun decideStartRead(
     localPendingAtStart: Boolean,
     elapsedSinceStartMs: Long,
     durationMs: Long?,
+    /**
+     * Playback resumed on this device after its own pause (a call, a stop at the lights): it was
+     * listening here last, so the server answer can only be offered, never jumped to (user,
+     * 9.11.2026: after a call Play jumped back to a mark an hour old from the computer, the car's
+     * newer position had not reached the server yet).
+     */
+    resumedHere: Boolean = false,
 ): StartReadAction {
     if (localPendingAtStart || serverCompleted) return StartReadAction.None
     if (serverPositionMs <= 0) return StartReadAction.None
     if (durationMs != null && durationMs > 0 && serverPositionMs >= durationMs) return StartReadAction.None
     if (abs(serverPositionMs - startPositionMs) <= TOLERANCE_MS) return StartReadAction.None
-    return if (elapsedSinceStartMs <= START_WINDOW_MS) {
+    return if (elapsedSinceStartMs <= START_WINDOW_MS && !resumedHere) {
         StartReadAction.Jump(toMs = serverPositionMs, fromMs = startPositionMs + elapsedSinceStartMs)
     } else {
         StartReadAction.Offer(serverPositionMs)

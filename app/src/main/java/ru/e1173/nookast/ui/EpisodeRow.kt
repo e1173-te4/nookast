@@ -384,7 +384,9 @@ internal fun EpisodeMenu(menu: List<EpisodeMenuItem>, expanded: Boolean, onDismi
         expanded = expanded,
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(min = 230.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
+        containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
     ) {
         ru.e1173.nookast.designsystem.InterfaceScaled {
             menu.forEach { item ->

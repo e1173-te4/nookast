@@ -72,30 +72,9 @@ class MediaCompatibilityRegistry private constructor(
     }
 }
 
-/**
- * JAECOO J7 head unit (DesaySV, Qualcomm msmnile, platform `g7ph`). Matched by the platform
- * product or by the physical panel. Sizes are the REAL display size: the logical window excludes
- * system bars (1440x1670 on the car, journal of 24.10.2026), which is why the old check failed.
- */
-internal fun detectBuiltInMediaProfileId(identity: MediaDeviceIdentity): String? {
-    val buildIdentity = listOf(
-        identity.manufacturer,
-        identity.brand,
-        identity.model,
-        identity.device,
-        identity.product,
-    )
-    val identifiesJaecoo = buildIdentity.any { it.contains("jaecoo", ignoreCase = true) }
-    val identifiesDesaySv = buildIdentity.any { it.contains("desaysv", ignoreCase = true) }
-    val knownPlatform = identity.product.startsWith("g7ph", ignoreCase = true)
-    val knownPanel = identity.widthPx == 1_440 && identity.heightPx == 1_920 &&
-        identity.densityDpi == 160
-    return if (identifiesJaecoo || (identifiesDesaySv && (knownPlatform || knownPanel))) {
-        "jaecoo_j7"
-    } else {
-        null
-    }
-}
+/** The media profile of the known head unit [identity] is, if any ([KnownHeadUnits]). */
+internal fun detectBuiltInMediaProfileId(identity: MediaDeviceIdentity): String? =
+    KnownHeadUnits.detect(identity)?.mediaProfileId
 
 /** Identity of this device with the physical size of the default display. */
 internal fun currentMediaDeviceIdentity(context: Context): MediaDeviceIdentity {

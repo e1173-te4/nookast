@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import ru.e1173.nookast.player.MediaButtonProfileMode
 import ru.e1173.nookast.player.PlaybackPreferences
 import ru.e1173.nookast.player.QueueInsertionPosition
 import ru.e1173.nookast.player.QueueSwipeAction
@@ -15,7 +14,6 @@ import ru.e1173.nookast.player.QueueSwipeAction
 internal data class PlayerSettings(
     val downloadWholeEpisodeOnPlayback: Boolean = false,
     val aheadCacheMegabytes: Int = PlaybackPreferences.DEFAULT_AHEAD_CACHE_MB,
-    val mediaButtonProfileMode: MediaButtonProfileMode = MediaButtonProfileMode.AUTO,
     val playbackStartQueuePosition: QueueInsertionPosition = QueueInsertionPosition.FIRST,
     val manualQueuePosition: QueueInsertionPosition = QueueInsertionPosition.LAST,
     val queueSwipeStartAction: QueueSwipeAction = QueueSwipeAction.DOWNLOAD_OR_DELETE,
@@ -44,7 +42,6 @@ internal class PlayerSettingsViewModel(application: Application) : AndroidViewMo
     private fun read() = PlayerSettings(
         downloadWholeEpisodeOnPlayback = preferences.downloadWholeEpisodeOnPlayback,
         aheadCacheMegabytes = preferences.aheadCacheMegabytes,
-        mediaButtonProfileMode = preferences.mediaButtonProfileMode,
         playbackStartQueuePosition = preferences.playbackStartQueuePosition,
         manualQueuePosition = preferences.manualQueuePosition,
         queueSwipeStartAction = preferences.queueSwipeStartAction,
@@ -60,8 +57,6 @@ internal class PlayerSettingsViewModel(application: Application) : AndroidViewMo
     fun setDownloadWholeEpisodeOnPlayback(enabled: Boolean) = change { downloadWholeEpisodeOnPlayback = enabled }
 
     fun setAheadCacheMegabytes(megabytes: Int) = change { aheadCacheMegabytes = megabytes }
-
-    fun setMediaButtonProfileMode(mode: MediaButtonProfileMode) = change { mediaButtonProfileMode = mode }
 
     fun setPlaybackStartQueuePosition(position: QueueInsertionPosition) = change { playbackStartQueuePosition = position }
 

@@ -132,11 +132,13 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
         }
     }
 
-    SettingsGroupLabel(R.string.control_journal_presets, Modifier.padding(top = 18.dp))
+    // Steering-wheel and head-unit markers belong to the car only (user, 6.11.2026).
+    val headUnit = remember(context) { ru.e1173.nookast.player.KnownHeadUnits.current(context) != null }
+    SettingsGroupLabel(if (headUnit) R.string.control_journal_presets else R.string.control_journal_markers, Modifier.padding(top = 18.dp))
     SettingsPanel {
         Column(Modifier.padding(16.dp)) {
             // The quick markers the user liked, one tap each.
-            FlowRow(
+            if (headUnit) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp),
                 modifier = Modifier.fillMaxWidth(),
@@ -154,7 +156,7 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = if (headUnit) 8.dp else 0.dp),
             ) {
                 OutlinedTextField(
                     value = markText,
