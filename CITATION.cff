@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you mention Nookast in your work, please refer to it like this."
+title: "Nookast: an Android client for PinePods"
+type: software
+authors:
+  - alias: e1173-te4
+repository-code: "https://github.com/e1173-te4/nookast"
+url: "https://e1173-te4.github.io/nookast/"
+license: PolyForm-Noncommercial-1.0.0
+abstract: >-
+  A native Android podcast player for a self-hosted PinePods server, with offline-first sync of
+  progress and the queue, chapters from description timestamps and over-the-air updates.
+keywords:
+  - android
+  - podcast
+  - podcast-player
+  - pinepods
+  - self-hosted
+  - jetpack-compose

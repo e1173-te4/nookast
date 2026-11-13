@@ -1,0 +1,21 @@
+# Nookast
+
+> Nookast is a native Android podcast player for a self-hosted PinePods server. It keeps playback
+> progress, played state, favourites and the Up next queue in sync across devices, keeps every
+> change on the phone until the server confirms it, falls back to streaming through the server when
+> a podcast host is unreachable, turns description timestamps into chapters, and marks podcasts
+> that went quiet. It updates itself from this repository's releases. Android 8.0+, free for
+> noncommercial use (PolyForm Noncommercial 1.0.0).
+
+## Docs
+
+- [README](README.md): features, screenshots, install, network access, license
+- [AGENTS.md](AGENTS.md): layout, build and rules for AI coding agents
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to report bugs and propose changes
+- [SECURITY.md](SECURITY.md): private vulnerability reporting
+- [Release notes](release-notes/): what changed in each version
+
+## Optional
+
+- [Releases](https://github.com/e1173-te4/nookast/releases): signed APKs with SHA-256
+- [PinePods](https://github.com/madeofpendletonwool/PinePods): the server Nookast connects to

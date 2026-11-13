@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nookast — Android podcast player for your PinePods server</title>
+<meta name="description" content="Nookast is a free native Android podcast app for self-hosted PinePods: offline-first sync of progress and the queue across devices, streaming through your server when a podcast host is unreachable, chapters from description timestamps, and five themes.">
+<meta name="keywords" content="PinePods, PinePods Android, PinePods client, self-hosted podcast app, Android podcast player, podcast sync, offline podcasts, podcast chapters, Jetpack Compose">
+<link rel="canonical" href="https://e1173-te4.github.io/nookast/">
+<link rel="icon" type="image/png" href="branding/nookast-icon.png">
+<meta name="theme-color" content="#1f0838">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nookast">
+<meta property="og:title" content="Nookast — Android podcast player for your PinePods server">
+<meta property="og:description" content="Every episode plays. Every second is remembered. On every device.">
+<meta property="og:url" content="https://e1173-te4.github.io/nookast/">
+<meta property="og:image" content="https://e1173-te4.github.io/nookast/branding/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Nookast — Android podcast player for PinePods">
+<meta name="twitter:description" content="Offline-first sync, streaming through your server, chapters from timestamps.">
+<meta name="twitter:image" content="https://e1173-te4.github.io/nookast/branding/social-preview.png">
+<link rel="alternate" hreflang="en" href="https://e1173-te4.github.io/nookast/">
+<link rel="alternate" hreflang="ru" href="https://e1173-te4.github.io/nookast/#ru">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Nookast",
+  "alternateName": "Нукаст",
+  "applicationCategory": "MultimediaApplication",
+  "applicationSubCategory": "Podcast player",
+  "operatingSystem": "Android 8.0+",
+  "description": "A native Android podcast player for a self-hosted PinePods server with offline-first sync, streaming through the server, chapters from description timestamps and over-the-air updates.",
+  "url": "https://e1173-te4.github.io/nookast/",
+  "downloadUrl": "https://github.com/e1173-te4/nookast/releases/latest",
+  "codeRepository": "https://github.com/e1173-te4/nookast",
+  "image": "https://e1173-te4.github.io/nookast/branding/social-preview.png",
+  "screenshot": [
+    "https://e1173-te4.github.io/nookast/screenshots/fold-now-playing-description.png",
+    "https://e1173-te4.github.io/nookast/screenshots/phone-now-playing-new-year.png",
+    "https://e1173-te4.github.io/nookast/screenshots/large-podcasts-mint.png"
+  ],
+  "inLanguage": ["en", "ru"],
+  "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "e1173-te4", "url": "https://github.com/e1173-te4" }
+}
+</script>
+<style>
+@font-face { font-family: Manrope; src: url("fonts/manrope.ttf") format("truetype"); font-weight: 200 800; font-display: swap; }
+:root {
+  --bg: #12051f; --bg2: #2a0f4a; --card: rgba(255,255,255,.06); --line: rgba(255,255,255,.12);
+  --text: #fbf7ff; --muted: #c9b8e6; --accent: #f7b995; --violet: #a98ce0;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; font-family: Manrope, system-ui, sans-serif; color: var(--text); line-height: 1.6;
+  background: radial-gradient(1200px 700px at 85% -10%, rgba(247,185,149,.18), transparent 60%),
+              linear-gradient(160deg, var(--bg2), var(--bg) 55%); background-attachment: fixed; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+nav .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 20px; color: var(--text); }
+nav .brand img { width: 36px; height: 36px; border-radius: 9px; }
+nav .links { display: flex; gap: 20px; font-size: 15px; }
+nav .links a { color: var(--muted); }
+.hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; padding: 48px 0 72px; }
+.hero h1 { font-size: clamp(40px, 6vw, 68px); line-height: 1.05; margin: 0 0 20px; letter-spacing: -.02em; }
+.hero h1 span { background: linear-gradient(90deg, var(--accent), var(--violet)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p.lead { font-size: 20px; color: var(--muted); margin: 0 0 32px; max-width: 34ch; }
+.buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 22px; border-radius: 999px; font-weight: 700; font-size: 16px; }
+.btn.primary { background: linear-gradient(90deg, #f7b995, #e98fb0); color: #2a0f2a; }
+.btn.ghost { border: 1px solid var(--line); color: var(--text); background: var(--card); }
+.btn:hover { text-decoration: none; filter: brightness(1.06); }
+.note { margin-top: 18px; font-size: 14px; color: var(--muted); }
+.hero .shot img { width: 100%; border-radius: 24px; border: 1px solid var(--line); box-shadow: 0 40px 80px rgba(0,0,0,.45); }
+h2 { font-size: clamp(28px, 4vw, 40px); margin: 0 0 12px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 36px; max-width: 60ch; }
+section { padding: 56px 0; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+.card .emoji { font-size: 28px; }
+.card h3 { margin: 10px 0 8px; font-size: 19px; }
+.card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+.pill { display: grid; grid-template-columns: 300px 1fr; gap: 40px; align-items: center; }
+.pill img { width: 100%; border-radius: 22px; border: 1px solid var(--line); }
+.gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.gallery figure { margin: 0; }
+.gallery img { width: 100%; border-radius: 18px; border: 1px solid var(--line); }
+.gallery figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+ol.steps { padding-left: 22px; color: var(--muted); }
+ol.steps li { margin-bottom: 10px; }
+ol.steps b { color: var(--text); }
+code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; font-size: .9em; word-break: break-all; }
+#ru .card p, #ru p { color: var(--muted); }
+footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
+footer .row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+@media (max-width: 900px) {
+  .hero, .pill { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr 1fr; }
+  .gallery { grid-template-columns: 1fr 1fr; }
+  .pill img { max-width: 300px; }
+  nav .links { display: none; }
+}
+@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .gallery { gap: 12px; } }
+img { max-width: 100%; }
+.hero > *, .grid > *, .pill > *, .gallery > * { min-width: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="./"><img src="branding/nookast-icon.png" alt="">Nookast</a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#pill">The pill</a>
+      <a href="#install">Install</a>
+      <a href="#ru">По-русски</a>
+      <a href="https://github.com/e1173-te4/nookast">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <h1>The podcast player your <span>PinePods</span> server deserves.</h1>
+      <p class="lead">Every episode plays. Every second is remembered. On every device. A native
+      Android app, free for personal use.</p>
+      <div class="buttons">
+        <a class="btn primary" href="https://github.com/e1173-te4/nookast/releases/latest">⬇ Download the APK</a>
+        <a class="btn ghost" href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/e1173-te4/nookast">Add to Obtainium</a>
+        <a class="btn ghost" href="https://github.com/e1173-te4/nookast">Source on GitHub</a>
+      </div>
+      <p class="note">Android 8.0+ · signed releases with SHA-256 · updates itself · 100% vibe-coded 🤖</p>
+    </div>
+    <div class="shot"><img src="screenshots/fold-now-playing-description.png" alt="Nookast Now Playing on a foldable with chapters recognised from the description"></div>
+  </header>
+
+  <section id="features">
+    <h2>Built around your server</h2>
+    <p class="sub">Nookast talks to your own PinePods server and keeps everything in step: progress,
+    played state, favourites and the Up next queue, on any number of devices.</p>
+    <div class="grid">
+      <div class="card"><div class="emoji">🛟</div><h3>It always plays</h3><p>Can't reach a podcast's host from your phone? Nookast streams through your server, or has it fetch the episode, and carries on from the same second.</p></div>
+      <div class="card"><div class="emoji">🧭</div><h3>Never loses your place</h3><p>Every tap is kept on the phone until the server confirms it. No signal, a reboot, a killed app: nothing is lost, and a stale server answer never overwrites a newer change.</p></div>
+      <div class="card"><div class="emoji">✨</div><h3>Chapters everywhere</h3><p>From the feed, from the file with their own artwork, or recognised from plain timestamps in the description.</p></div>
+      <div class="card"><div class="emoji">🪦</div><h3>Dead shows stand out</h3><p>Covers say «Quiet for 6 months», «Abandoned» or «Feed unavailable». A feed moved? Change its RSS address in place, progress stays.</p></div>
+      <div class="card"><div class="emoji">🎨</div><h3>Made to be looked at</h3><p>Five palettes in light and dark, colours from the cover, skies that follow the real sun where you are, and a New Year mood with snow.</p></div>
+      <div class="card"><div class="emoji">🔒</div><h3>Private</h3><p>No analytics, ads or trackers. Releases are built in a public workflow, started on an emulator and checked by SHA-256 and signature.</p></div>
+    </div>
+  </section>
+
+  <section id="pill">
+    <div class="pill">
+      <img src="screenshots/phone-now-playing-new-year.png" alt="The source pill opened on Now Playing">
+      <div>
+        <h2>The pill 📡</h2>
+        <p class="sub">The small capsule under the timeline in Now Playing is the source pill. It tells
+        where the sound comes from right now — a file on the phone, the copy on your PinePods server,
+        the podcast's own host or a stream through the server — and how the connection is doing: a
+        green dot means all is well. Tap it to see quality and buffer, check the connection, and play
+        through your server when the host is out of reach.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>A closer look</h2>
+    <p class="sub">Phones, foldables, tablets and large displays, with two panes where there is room.</p>
+    <div class="gallery">
+      <figure><img src="screenshots/phone-search-card.png" alt="A podcast card before subscribing" loading="lazy"><figcaption>Meet a show before you follow it.</figcaption></figure>
+      <figure><img src="screenshots/phone-search-card-info.png" alt="Podcast information with the RSS address" loading="lazy"><figcaption>Every detail, one tap away.</figcaption></figure>
+      <figure><img src="screenshots/phone-dashboard-week.png" alt="Your week on Home" loading="lazy"><figcaption>Your week of listening.</figcaption></figure>
+      <figure><img src="screenshots/phone-feed.png" alt="The Feed of newest episodes" loading="lazy"><figcaption>The newest episodes in one list.</figcaption></figure>
+    </div>
+    <p style="margin-top:24px"><img src="screenshots/large-podcasts-mint.png" alt="The podcast library on a large screen" loading="lazy" style="width:100%;max-width:720px;border-radius:20px;border:1px solid var(--line)"></p>
+  </section>
+
+  <section id="install">
+    <h2>Install in a minute</h2>
+    <ol class="steps">
+      <li><b>Download</b> <code>nookast-&lt;version&gt;.apk</code> from the <a href="https://github.com/e1173-te4/nookast/releases/latest">latest release</a> and open it.</li>
+      <li><b>Sign in</b> with your PinePods server address, login and password.</li>
+      <li><b>That's it.</b> Nookast updates itself from the releases, once a day over Wi-Fi while nothing plays, or just tells you, as you choose.</li>
+    </ol>
+    <p class="note">Signing certificate SHA-256: <code>837fd9d7c432b1b0e58e954cf6835689f4fcac15849c76289fea723a66c6c5ad</code></p>
+  </section>
+
+  <section id="ru" lang="ru">
+    <h2>По-русски</h2>
+    <p><b>Нукаст — плеер подкастов для вашего сервера PinePods.</b> Он помнит, где вы остановились, и на
+    любом устройстве продолжает с того же места. Если подкаст недоступен напрямую, звук пойдёт через
+    ваш сервер. Таймкоды из описания превращаются в главы, заброшенные подкасты видно по пометке на
+    обложке, а всё, что вы делаете, сначала сохраняется на телефоне и не теряется без сети.</p>
+    <p><b>Пилюля</b> — небольшая плашка под шкалой времени в плеере. По ней видно, откуда сейчас идёт
+    звук и как дела со связью. Если на неё нажать, откроются подробности: качество, запас буфера,
+    проверка связи и кнопка, чтобы слушать через сервер, когда подкаст с телефона недоступен.</p>
+    <p><a href="https://github.com/e1173-te4/nookast/releases/latest">Скачать APK</a> · Android 8.0 и новее ·
+    бесплатно для некоммерческого использования.</p>
+  </section>
+
+  <footer>
+    <div class="row">
+      <div>Nookast · <a href="https://github.com/e1173-te4/nookast/blob/main/LICENSE.md">PolyForm Noncommercial 1.0.0</a> · not affiliated with <a href="https://github.com/madeofpendletonwool/PinePods">PinePods</a></div>
+      <div><a href="https://github.com/e1173-te4/nookast/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/e1173-te4/nookast/issues">Issues</a> · <a href="llms.txt">llms.txt</a></div>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

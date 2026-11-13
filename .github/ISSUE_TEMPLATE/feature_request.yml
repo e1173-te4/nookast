@@ -1,0 +1,24 @@
+name: Feature request / Идея
+description: Suggest an improvement for Nookast. / Предложите, как улучшить Nookast.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then the idea. / Сначала опишите проблему, потом идею.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is missing or gets in the way? / Чего не хватает или что мешает?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help? / Что помогло бы?
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version, if it matters / Устройство и версия Android, если важно
