@@ -7,13 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControl
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControlActions
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControlState
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControlStrings
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControlTab
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingControlTheme
-import ru.e1173.nookast.ui.designsystem.nowplaying.NowPlayingDownloadVisualState
 
 internal val NowPlayingControlPhoneLightPlaybackScene = CatalogScene(
     id = "now-playing-control-phone-light-playback-r1",

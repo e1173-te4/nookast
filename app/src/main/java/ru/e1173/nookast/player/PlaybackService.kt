@@ -104,7 +104,10 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
     private lateinit var itemFactory: PlaybackItemFactory
     private lateinit var playbackPreferences: PlaybackPreferences
     private lateinit var connectivityManager: ConnectivityManager
-    private val audioEffectsController = AudioEffectsController()
+
+    // The app's own sound processing (audio rework З, DEC-060), after the voice tee.
+    private val soundProcessor = SoundProcessor()
+    private var soundController: SoundController? = null
     private lateinit var mediaDeviceIdentity: MediaDeviceIdentity
     private val carSkipKeyMapper = CarSkipKeyMapper()
     private val replayDetector = ReplayDetector()
@@ -127,6 +130,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                     "device added ${ControlJournalFormat.audioDevice(device)}"
                 }
             }
+            soundController?.routeChanged()
         }
 
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
@@ -135,6 +139,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                     "device removed ${ControlJournalFormat.audioDevice(device)}"
                 }
             }
+            soundController?.routeChanged()
         }
     }
     private val playbackPreferenceListener =
@@ -145,9 +150,6 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                     player.setSeekBackIncrementMs(playbackPreferences.seekBackSeconds * 1_000L)
                     player.setSeekForwardIncrementMs(playbackPreferences.seekForwardSeconds * 1_000L)
                     mediaLibrarySession?.setMediaButtonPreferences(seekButtons())
-                }
-                PlaybackPreferences.isAudioProcessingPreference(key) -> playerScope.launch {
-                    audioEffectsController.apply(playbackPreferences.audioProcessingSettings)
                 }
             }
         }
@@ -320,7 +322,30 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
             .build()
+        // «Light follows the voice» (design audit 5.8): Media3's pass-through tee is always in the chain,
+        // so the switch works at once and never touches the sound; off, the listener only checks a flag.
+        // The sink wrapper times each window by media position, so the light follows what is audible.
+        ru.e1173.nookast.preferences.VoiceLightSwitch.on = ru.e1173.nookast.preferences.voiceLightEnabled(this)
+        // With «Shorten pauses» the voice light rests at 1 (З10: its alignment there is not verified).
+        val voiceOn = { ru.e1173.nookast.preferences.VoiceLightSwitch.on && !SoundSession.shortenPauses }
+        val voiceTap = VoiceLevelTap(enabled = voiceOn)
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: android.content.Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): androidx.media3.exoplayer.audio.AudioSink = VoiceAlignedAudioSink(
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(androidx.media3.exoplayer.audio.TeeAudioProcessor(voiceTap), soundProcessor))
+                    .build(),
+                voiceTap,
+                enabled = voiceOn,
+            )
+        }
         val player = ExoPlayer.Builder(this)
+            .setRenderersFactory(renderers)
             .setMediaSourceFactory(
                 // Downloaded files are read directly: through the cache they were copied a second
                 // time and filled it with what is already on disk (P-11).
@@ -349,6 +374,20 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
             .setSeekForwardIncrementMs(playbackPreferences.seekForwardSeconds * 1_000L)
             .build()
         player.addListener(this)
+        soundController = SoundController(
+            context = this,
+            processor = soundProcessor,
+            player = { mediaLibrarySession?.player as? ExoPlayer },
+            mainScope = playerScope,
+            account = { sessionStore.load()?.let { ru.e1173.nookast.core.sync.AccountIdentity.of(it).fingerprint } },
+            podcastIdOf = { item ->
+                val dao = database.offlineCacheDao()
+                val byId = item.mediaId.toIntOrNull()?.takeIf { it > 0 }?.let { dao.findEpisodeByPinePodsId(it) }
+                (byId ?: item.mediaMetadata.extras?.getString(PlaybackViewModel.EXTRA_PRIMARY_MEDIA_URL)
+                    ?.let { dao.findEpisodeByMediaUrl(it) })?.podcastId
+            },
+            wideVehicleProfile = detectBuiltInMediaProfileId(mediaDeviceIdentity) != null,
+        )
         mediaLibrarySession = MediaLibrarySession.Builder(
             this,
             player,
@@ -675,6 +714,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
             manager.registerAudioDeviceCallback(audioDeviceCallback, null)
         }
 
+        soundController?.start()
         restorePlaybackContext(player)
         // Each time the app comes to the foreground: what was listened elsewhere meanwhile (user, 9.11.2026).
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(foregroundObserver)
@@ -705,6 +745,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onDestroy() {
         persistFinalProgressSynchronously()
+        soundController?.stop()
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
         followServerJob?.cancel()
         playbackPreferences.unregisterListener(playbackPreferenceListener)
@@ -719,7 +760,6 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
         controlReadJob?.cancel()
         mediaLibrarySession?.let { session ->
             session.player.removeListener(this)
-            audioEffectsController.release()
             session.player.release()
             session.release()
         }
@@ -741,6 +781,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         PlaybackActivity.playing = isPlaying
+        soundController?.playingChanged(isPlaying)
         journal.record(ControlJournal.Category.PLAYER) { "isPlaying=$isPlaying" }
         appGraph.syncScheduler.setPlaying(isPlaying)
         if (isPlaying && pausedAtElapsedMs != 0L &&
@@ -839,10 +880,6 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
         }
     }
 
-    override fun onAudioSessionIdChanged(audioSessionId: Int) {
-        audioEffectsController.attach(audioSessionId, playbackPreferences.audioProcessingSettings)
-    }
-
     override fun onPlayerError(error: PlaybackException) {
         val player = mediaLibrarySession?.player ?: return
         val item = player.currentMediaItem ?: return
@@ -870,6 +907,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        soundController?.itemChanged(mediaItem, repeat = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
         resumedHereAfterPause = false
         NativeChapters.reset(mediaItem?.mediaId)
         replayDetector.reset()

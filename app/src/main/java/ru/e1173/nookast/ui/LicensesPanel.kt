@@ -1,5 +1,7 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -52,9 +54,9 @@ internal fun LicensesPanel() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             ) {
-                OutlinedButton(onClick = { open = COMPONENTS }) { Text(stringResource(R.string.licenses_components)) }
-                OutlinedButton(onClick = { open = APACHE }) { Text(stringResource(R.string.licenses_apache)) }
-                OutlinedButton(onClick = { open = OFL }) { Text(stringResource(R.string.licenses_ofl)) }
+                NookButton(variant = NookButtonVariant.Outline, onClick = { open = COMPONENTS }) { Text(stringResource(R.string.licenses_components)) }
+                NookButton(variant = NookButtonVariant.Outline, onClick = { open = APACHE }) { Text(stringResource(R.string.licenses_apache)) }
+                NookButton(variant = NookButtonVariant.Outline, onClick = { open = OFL }) { Text(stringResource(R.string.licenses_ofl)) }
             }
         }
     }

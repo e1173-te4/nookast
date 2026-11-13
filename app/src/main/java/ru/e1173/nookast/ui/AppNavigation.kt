@@ -52,7 +52,7 @@ internal sealed interface Route {
     data object Queue : Route
     data object Settings : Route
 
-    /** Search and add podcasts (user, 1.11.2026), opened from the Dashboard. */
+    /** Search and add podcasts (user, 1.11.2026), opened from the Dashboard or the Podcasts header. */
     data object Search : Route
 
     /** The episode card (user, 30.10.2026): opened from any list, over the tab it was opened in. */
@@ -69,12 +69,13 @@ internal fun AppDestination.rootRoute(): Route = when (this) {
 
 /** The destination a route belongs to, for the navigation bar and the screen frame. */
 internal fun Route.destination(tab: AppDestination): AppDestination = when (this) {
-    Route.Home, is Route.Playlist, Route.Search -> AppDestination.HOME
+    Route.Home, is Route.Playlist -> AppDestination.HOME
     Route.Podcasts, is Route.Podcast -> AppDestination.PODCASTS
     Route.Feed -> AppDestination.FEED
     Route.Queue -> AppDestination.QUEUE
     Route.Settings -> AppDestination.SETTINGS
-    is Route.Episode -> tab
+    // Search opens in the tab it was opened from: Home or Podcasts (audit 3.9).
+    is Route.Episode, Route.Search -> tab
 }
 
 internal fun Route.encode(): String = when (this) {

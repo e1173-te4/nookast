@@ -84,8 +84,6 @@ data class PlaybackUiState(
     val nativeChapters: List<PlaybackChapter> = emptyList(),
     /** Podcasting 2.0 chapters of the feed through PinePods; preferred over the stream's own. */
     val feedChapters: List<PlaybackChapter> = emptyList(),
-    val audioProcessingSettings: AudioProcessingSettings = AudioProcessingSettings(),
-    val audioProcessingSupport: AudioProcessingSupport = AudioProcessingSupport(),
     val seekBackSeconds: Int = PlaybackPreferences.DEFAULT_SEEK_BACK_SECONDS,
     val seekForwardSeconds: Int = PlaybackPreferences.DEFAULT_SEEK_FORWARD_SECONDS,
     val autoMarkPlayedNearEndEnabled: Boolean = false,
@@ -164,8 +162,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             autoMarkPlayedNearEndEnabled = playbackPreferences.autoMarkPlayedNearEndEnabled,
             autoMarkPlayedRemainingMinutes =
                 playbackPreferences.autoMarkPlayedRemainingMinutes,
-            audioProcessingSettings = playbackPreferences.audioProcessingSettings,
-            audioProcessingSupport = AudioProcessingSupport.detect(),
         ),
     )
 
@@ -177,7 +173,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
                 seekForwardSeconds = playbackPreferences.seekForwardSeconds,
                 autoMarkPlayedNearEndEnabled = playbackPreferences.autoMarkPlayedNearEndEnabled,
                 autoMarkPlayedRemainingMinutes = playbackPreferences.autoMarkPlayedRemainingMinutes,
-                audioProcessingSettings = playbackPreferences.audioProcessingSettings,
             )
         }
     }.also(playbackPreferences::registerListener)
@@ -445,27 +440,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         _state.update { it.copy(seekForwardSeconds = playbackPreferences.seekForwardSeconds) }
     }
 
-    fun setAudioOverallGainDb(value: Int) {
-        playbackPreferences.audioOverallGainDb = value
-        _state.update {
-            it.copy(audioProcessingSettings = playbackPreferences.audioProcessingSettings)
-        }
-    }
-
-    fun setAudioBassDb(value: Int) {
-        playbackPreferences.audioBassDb = value
-        _state.update {
-            it.copy(audioProcessingSettings = playbackPreferences.audioProcessingSettings)
-        }
-    }
-
-    fun setAudioSpeechClarity(value: Int) {
-        playbackPreferences.audioSpeechClarity = value
-        _state.update {
-            it.copy(audioProcessingSettings = playbackPreferences.audioProcessingSettings)
-        }
-    }
-
     fun setAutoMarkPlayedNearEndEnabled(enabled: Boolean) {
         playbackPreferences.autoMarkPlayedNearEndEnabled = enabled
         _state.update { it.copy(autoMarkPlayedNearEndEnabled = enabled) }
@@ -512,8 +486,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             autoMarkPlayedNearEndEnabled = playbackPreferences.autoMarkPlayedNearEndEnabled,
             autoMarkPlayedRemainingMinutes =
                 playbackPreferences.autoMarkPlayedRemainingMinutes,
-            audioProcessingSettings = playbackPreferences.audioProcessingSettings,
-            audioProcessingSupport = AudioProcessingSupport.detect(),
         )
     }
 
@@ -603,6 +575,9 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
                     ?.resolve(PINEPODS_HEALTH_PATH)?.toString()?.let(::add)
             }
             add(StreamReachabilityClient.CONNECTIVITY_CHECK_URL)
+            // Yandex next to Google (user, 11.11.2026): where one of them is blocked, the other tells
+            // whether the internet itself works.
+            add(StreamReachabilityClient.YANDEX_CHECK_URL)
         }.distinct()
         _state.update { it.copy(diagnosticsRunning = true, diagnosticResults = emptyList()) }
         diagnosticsJob = viewModelScope.launch {
@@ -826,7 +801,6 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
                 nativeChapters = NativeChapters.state.value.takeIf { snapshot -> snapshot.mediaId == item?.mediaId }
                     ?.chapters.orEmpty(),
                 feedChapters = if (episodeChanged) emptyList() else it.feedChapters,
-                audioProcessingSettings = playbackPreferences.audioProcessingSettings,
                 seekBackSeconds = playbackPreferences.seekBackSeconds,
                 seekForwardSeconds = playbackPreferences.seekForwardSeconds,
                 diagnosticResults = if (sourceChanged) emptyList() else it.diagnosticResults,

@@ -1,5 +1,10 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookTextField
+import ru.e1173.nookast.designsystem.NookSwitch
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonSize
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.ClipData
 import android.content.ClipDescription
@@ -158,16 +163,15 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = if (headUnit) 8.dp else 0.dp),
             ) {
-                OutlinedTextField(
+                NookTextField(
                     value = markText,
                     onValueChange = { markText = it.take(ControlJournal.MAX_MARK_LENGTH) },
                     label = { Text(stringResource(R.string.control_journal_mark_hint)) },
                     singleLine = true,
                     enabled = recording,
-                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f),
                 )
-                Button(
+                NookButton(
                     onClick = {
                         journal.mark(markText)
                         markText = ""
@@ -199,13 +203,13 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { deviceRevision++ }) { Text(stringResource(R.string.diagnostics_device_refresh)) }
+                NookButton(variant = NookButtonVariant.Text, onClick = { deviceRevision++ }) { Text(stringResource(R.string.diagnostics_device_refresh)) }
             }
             device.forEach { section ->
                 Text(
                     text = section.title,
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                 )
                 section.lines.forEach { line ->
@@ -224,7 +228,7 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
         // Share on its own row, Copy and Clear under it (user, 5.11.2026: three in a row wrapped
         // their labels in Russian).
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+            NookButton(size = NookButtonSize.L,
                 onClick = { scope.launch { shareJournal(context, journal, window) } },
                 modifier = Modifier.fillMaxWidth().heightIn(min = touchTarget),
             ) {
@@ -234,13 +238,13 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                OutlinedButton(
+                NookButton(variant = NookButtonVariant.Outline,
                     onClick = { scope.launch { copiedMessage = copyJournal(context, journal, window) } },
                     modifier = Modifier.weight(1f).heightIn(min = touchTarget),
                 ) {
                     Text(stringResource(R.string.control_journal_copy), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                OutlinedButton(
+                NookButton(variant = NookButtonVariant.Outline,
                     onClick = { confirmClear = true },
                     modifier = Modifier.weight(1f).heightIn(min = touchTarget),
                 ) {
@@ -251,7 +255,7 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
                 Text(
                     stringResource(message),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -260,16 +264,17 @@ internal fun ControlJournalPanel(touchTarget: Dp) {
 
     SettingsGroupLabel(R.string.control_journal_recent, Modifier.padding(top = 18.dp))
     SettingsPanel {
-        Text(
-            text = if (preview.lines.isEmpty()) {
-                stringResource(R.string.control_journal_empty)
-            } else {
-                preview.lines.asReversed().joinToString("\n")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(16.dp),
-        )
+        if (preview.lines.isEmpty()) {
+            // The empty journal (design audit 5.6).
+            ru.e1173.nookast.designsystem.NookEmptyState(stringResource(R.string.control_journal_empty))
+        } else {
+            Text(
+                text = preview.lines.asReversed().joinToString("\n"),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
     }
 
     if (confirmClear) {
@@ -314,7 +319,7 @@ private fun JournalSwitchRow(title: String, subtitle: String, checked: Boolean, 
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        NookSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 

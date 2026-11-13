@@ -1,5 +1,6 @@
 package ru.e1173.nookast.ui.theme
 
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -54,14 +55,25 @@ fun NookastTheme(
     val screenView = androidx.compose.ui.platform.LocalView.current
     var previous by remember { mutableStateOf<ImageBitmap?>(null) }
     val cover = remember { Animatable(0f) }
+    // A change asked for on a palette sample opens as a circle from the touch (design audit 5.7).
+    var revealFrom by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    val reveal = remember { Animatable(0f) }
+    val reducedMotion = ru.e1173.nookast.designsystem.rememberReducedMotion()
     LaunchedEffect(requested) {
         if (requested != applied) {
             // A switch in the middle of another keeps the old cover until the new one replaces it
             // (user, 2.11.2026: quick switching let the text under a header flash sharp at random
             // while the screen had no cover and the glass was still settling).
+            val origin = ru.e1173.nookast.designsystem.ThemeReveal.take()
             runCatching { captureWindow(screenView) }.getOrNull()?.let { shot ->
                 previous = shot
                 cover.snapTo(1f)
+                revealFrom = origin.takeIf { !reducedMotion }
+                reveal.snapTo(0f)
+            } ?: run {
+                // No new snapshot: the old cover (if any) stays and fades plainly, without a half-played circle.
+                revealFrom = null
+                if (previous != null) cover.snapTo(1f)
             }
             applied = requested
             // The old screen stays whole until the new theme has drawn and settled, glass and the
@@ -69,8 +81,13 @@ fun NookastTheme(
             kotlinx.coroutines.delay(THEME_HOLD_MS)
         }
         if (previous != null) {
-            cover.animateTo(0f, tween(THEME_FADE_MS))
+            if (revealFrom != null) {
+                reveal.animateTo(1f, tween(THEME_REVEAL_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            } else {
+                cover.animateTo(0f, tween(THEME_FADE_MS))
+            }
             previous = null
+            revealFrom = null
         }
     }
     val (shownPalette, shownDark) = applied
@@ -91,13 +108,36 @@ fun NookastTheme(
     val scheme = remember(tokens) { tokens.toColorScheme() }
     CompositionLocalProvider(LocalNookastColors provides tokens, LocalThemePalette provides shownPalette) {
         Box(Modifier.fillMaxSize(), propagateMinConstraints = true) {
-            MaterialTheme(colorScheme = scheme, typography = NookastTypography, content = content)
+            MaterialTheme(colorScheme = scheme, typography = NookastTypography) {
+                // The app's press feedback replaces the ripple (design audit 4.4).
+                CompositionLocalProvider(
+                    androidx.compose.foundation.LocalIndication provides ru.e1173.nookast.designsystem.rememberNookIndication(),
+                    content = content,
+                )
+            }
             // The old screen lies in a layer of its own above the app, so its fade redraws only that
             // layer and never the app's root (user, 2.11.2026, video: in the frame the snapshot left,
             // the header's glass and button discs were missing).
             previous?.let { image ->
                 androidx.compose.foundation.layout.Spacer(
-                    Modifier.fillMaxSize().graphicsLayer { alpha = cover.value }.drawBehind { drawImage(image) },
+                    Modifier.fillMaxSize().graphicsLayer { alpha = cover.value }.drawBehind {
+                        val from = revealFrom
+                        if (from == null) {
+                            drawImage(image)
+                        } else {
+                            // The old screen leaves through a circle that grows from the touch to the farthest corner.
+                            val reach = listOf(
+                                androidx.compose.ui.geometry.Offset.Zero,
+                                androidx.compose.ui.geometry.Offset(size.width, 0f),
+                                androidx.compose.ui.geometry.Offset(0f, size.height),
+                                androidx.compose.ui.geometry.Offset(size.width, size.height),
+                            ).maxOf { (it - from).getDistance() }
+                            val hole = androidx.compose.ui.graphics.Path().apply {
+                                addOval(androidx.compose.ui.geometry.Rect(from, reach * reveal.value))
+                            }
+                            clipPath(hole, androidx.compose.ui.graphics.ClipOp.Difference) { drawImage(image) }
+                        }
+                    },
                 )
             }
         }
@@ -105,7 +145,8 @@ fun NookastTheme(
 }
 
 private const val THEME_HOLD_MS = 340L
-private const val THEME_FADE_MS = 280
+private const val THEME_FADE_MS = ru.e1173.nookast.designsystem.NookMotion.EMPHASIZED_MS
+private const val THEME_REVEAL_MS = 420
 
 /**
  * What is on screen now, as the display shows it (user, 2.11.2026: a snapshot drawn from the layers

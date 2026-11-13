@@ -2,6 +2,10 @@ package ru.e1173.nookast.designsystem
 
 import android.graphics.BlurMaskFilter
 import android.os.Build
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -103,5 +107,70 @@ internal fun DrawScope.drawGlassHighlight(alpha: Float = 0.10f) {
             // The light comes from above: the ring shifted down by 1 dp leaves a crescent at the top.
             drawCircle(center.x, center.y + w, r, paint)
         }
+    }
+}
+
+/**
+ * The one shadow of floating surfaces: alerts, popovers, menus, banners (user, 10.11.2026: «an
+ * evenly flat shadow» under the source popover; Android's elevation shadow drew a grey rim, and a
+ * blur inside a popup window was cut at the window's edge). Two soft layers in the theme's ink, as
+ * on iOS: a wide one lowered under the card and a close one for its edge. The surface's window
+ * needs [FloatingShadowMargin] of room around the card, or the blur is cut again.
+ */
+@androidx.compose.runtime.Composable
+fun Modifier.floatingShadow(cornerRadius: Dp, strength: Float = 1f): Modifier {
+    val colors = LocalNookastColors.current
+    val ink = if (colors.isDark) Color.Black else colors.textPrimary
+    val wide = (if (colors.isDark) 0.42f else 0.12f) * strength
+    val close = (if (colors.isDark) 0.30f else 0.06f) * strength
+    // Blur masks need API 28; Android 8 gets the platform shadow (independent review of audit 1–2).
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        return this.shadow(8.dp * strength, RoundedCornerShape(cornerRadius), ambientColor = ink, spotColor = ink)
+    }
+    return this.drawBehind {
+        val r = cornerRadius.toPx()
+        drawCssShadow(ink.copy(alpha = wide), 40.dp, r, dy = 14.dp)
+        drawCssShadow(ink.copy(alpha = close), 6.dp, r, dy = 1.dp)
+    }
+}
+
+/** Room a floating surface's own window keeps around the card for [floatingShadow]. */
+object FloatingShadowMargin {
+    val Side = 24.dp
+    val Top = 12.dp
+    val Bottom = 40.dp
+}
+
+/** Elevation levels (design audit 2.4). */
+enum class NookElevation {
+    /** A card: light themes only, ink 5 % blur 16 dy 6 and 4 % blur 3 dy 1; none at night. */
+    Level1,
+
+    /** Floating: the mini player, header discs, menus, popovers ([floatingShadow]). */
+    Level2,
+
+    /** Modal: the alert. */
+    Level3,
+}
+
+/** The shadow of [level] around a rounded shape of [cornerRadius]. */
+@androidx.compose.runtime.Composable
+fun Modifier.nookElevation(level: NookElevation, cornerRadius: Dp): Modifier {
+    val colors = LocalNookastColors.current
+    return when (level) {
+        NookElevation.Level1 -> if (colors.isDark) {
+            this
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            this.shadow(2.dp, RoundedCornerShape(cornerRadius), ambientColor = colors.textPrimary, spotColor = colors.textPrimary)
+        } else {
+            val ink = colors.textPrimary
+            this.drawBehind {
+                val r = cornerRadius.toPx()
+                drawCssShadow(ink.copy(alpha = 0.05f), 16.dp, r, dy = 6.dp)
+                drawCssShadow(ink.copy(alpha = 0.04f), 3.dp, r, dy = 1.dp)
+            }
+        }
+        NookElevation.Level2 -> floatingShadow(cornerRadius)
+        NookElevation.Level3 -> floatingShadow(cornerRadius, strength = 1.25f)
     }
 }

@@ -1,7 +1,14 @@
 package ru.e1173.nookast.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import ru.e1173.nookast.designsystem.nookPressable
+import ru.e1173.nookast.designsystem.NookType.scaled
+import androidx.compose.ui.graphics.compositeOver
+import ru.e1173.nookast.designsystem.nookCard
 import androidx.core.graphics.get
 import ru.e1173.nookast.designsystem.drawCssShadow
+import ru.e1173.nookast.designsystem.floatingShadow
+import ru.e1173.nookast.designsystem.nookElevation
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.AnimatedContent
@@ -26,14 +33,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,7 +62,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -83,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -119,11 +124,16 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val PodcastPanelShape = RoundedCornerShape(18.dp)
+private val PodcastPanelShape = ru.e1173.nookast.designsystem.NookShapes.l
 
 /** One height for the sort button and the view toggle, so they line up (APK-3.5 review). */
 private val PodcastControlHeight = 44.dp
-private val PodcastCardShape = RoundedCornerShape(14.dp)
+
+/** The height of «Continue» (a medium NookButton) and so of the gear beside it. */
+private val PodcastActionHeight = 40.dp
+
+/** Below this pane width the wide search disc would squeeze the sort control, so it is left out. */
+private val PodcastSearchInRowMinWidth = 320.dp
 
 // Both resolve to the theme background now (DEC-017); kept as names for the light/dark branches.
 internal val PodcastLightBackground: Color
@@ -200,9 +210,11 @@ private fun Modifier.podcastClickable(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ): Modifier = composed {
-    clickable(
-        interactionSource = remember { MutableInteractionSource() },
-        indication = null,
+    // The app's press wash and a slight shrink (design audit 4.4).
+    val press = remember { MutableInteractionSource() }
+    nookPressable(press).clickable(
+        interactionSource = press,
+        indication = androidx.compose.foundation.LocalIndication.current,
         enabled = enabled,
         onClick = onClick,
     )
@@ -211,6 +223,9 @@ private fun Modifier.podcastClickable(
 @Composable
 internal fun PodcastScreen(
     state: QueueUiState,
+    /** The playing episode: its row on a podcast page takes the light of its Play (4.12). */
+    currentEpisodeId: Int? = null,
+    isPlaying: Boolean = false,
     selectedPodcastId: Int?,
     sortMode: PodcastSortMode,
     viewMode: PodcastViewMode,
@@ -234,6 +249,8 @@ internal fun PodcastScreen(
     onUnsubscribe: (Int) -> Unit,
     onChangeFeedUrl: (Int, String, (FeedUrlChangeResult) -> Unit) -> Unit = { _, _, _ -> },
     onLoadPodcast: (Int) -> Unit = {},
+    /** Search and add, from the header (audit 3.9): opens Route.Search in this tab's stack. */
+    onOpenSearch: (() -> Unit)? = null,
     sortMenuInitiallyExpanded: Boolean = false,
     settingsMenuInitiallyExpanded: Boolean = false,
     descriptionInitiallyFullyExpanded: Boolean = false,
@@ -273,7 +290,11 @@ internal fun PodcastScreen(
     } else {
         PodcastLightBackground
     }
-    Box(Modifier.fillMaxSize().background(podcastBackground)) {
+    // Wide: the screen draws its own status-bar glass over its own background and light (user,
+    // 10.11.2026: the bar showed the bare base colour as a strip above the panes, light and dark).
+    val screenHaze = dev.chrisbanes.haze.rememberHazeState()
+    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().then(if (wide) Modifier.hazeSource(screenHaze) else Modifier).background(podcastBackground)) {
         // Wide: the open podcast's light lies behind both panes and the status bar (user,
         // 29.10.2026: it was cut at every edge of the pane).
         if (wide && selected != null) {
@@ -284,6 +305,7 @@ internal fun PodcastScreen(
         }
         val library: @Composable (Modifier, Int?) -> Unit = { paneModifier, highlighted ->
             PodcastLibraryPanel(
+                onOpenSearch = onOpenSearch,
                 podcasts = state.podcasts,
                 // The server's own verdict on a feed, once past its reporting threshold, wins.
                 freshness = state.podcastFreshness + state.serverFeedProblems.filterValues { it.reported }
@@ -312,6 +334,7 @@ internal fun PodcastScreen(
                 framed = false,
                 showTitle = true,
                 wideMaster = false,
+                searchInControls = wide,
                 sortMenuInitiallyExpanded = sortMenuInitiallyExpanded,
                 renderMenusInPlace = renderMenusInPlace,
                 pressedPodcastIdForPreview = pressedPodcastIdForPreview,
@@ -320,6 +343,8 @@ internal fun PodcastScreen(
         val podcast: @Composable (Modifier, Int, Boolean) -> Unit = { paneModifier, podcastId, showBack ->
             PodcastDetailsPanel(
                 podcastId = podcastId,
+                currentEpisodeId = currentEpisodeId,
+                isPlaying = isPlaying,
                 catalog = selected,
                 details = details,
                 detailsLoading = detailsLoading,
@@ -332,7 +357,6 @@ internal fun PodcastScreen(
                 pendingProgress = state.pendingPodcastEpisodeProgress,
                 progressUpdatedAt = state.podcastEpisodeProgressUpdatedAt,
                 largeControls = largeControls,
-                touchTarget = touchTarget,
                 showBack = showBack,
                 onBack = onBack,
                 onDescriptionCollapsedChanged = onDescriptionCollapsedChanged,
@@ -374,10 +398,10 @@ internal fun PodcastScreen(
                         modifier = paneModifier,
                         transitionSpec = {
                             (
-                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260, delayMillis = 60)) +
-                                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(320)) { it / 28 } +
-                                    androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(320), initialScale = 0.985f)
-                                ) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140))
+                                androidx.compose.animation.fadeIn(ru.e1173.nookast.designsystem.NookMotion.emphasized(delayMs = 60)) +
+                                    androidx.compose.animation.slideInVertically(ru.e1173.nookast.designsystem.NookMotion.emphasized()) { it / 28 } +
+                                    androidx.compose.animation.scaleIn(ru.e1173.nookast.designsystem.NookMotion.emphasized(), initialScale = 0.985f)
+                                ) togetherWith androidx.compose.animation.fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast())
                         },
                         label = "widePodcast",
                     ) { podcastId ->
@@ -415,10 +439,17 @@ internal fun PodcastScreen(
             )
         }
     }
+    if (wide) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalGlassVeil provides podcastBackground) {
+            StatusBarGlass(screenHaze)
+        }
+    }
+    }
 }
 
 @Composable
 private fun PodcastLibraryPanel(
+    onOpenSearch: (() -> Unit)?,
     podcasts: List<PodcastSubscriptionEntity>,
     freshness: Map<Int, ru.e1173.nookast.data.PodcastFreshness>,
     selectedPodcastId: Int?,
@@ -438,10 +469,19 @@ private fun PodcastLibraryPanel(
     framed: Boolean,
     showTitle: Boolean = true,
     wideMaster: Boolean = false,
+    // Wide: the search disc ends the controls row instead of floating by the title (П3).
+    searchInControls: Boolean = false,
     sortMenuInitiallyExpanded: Boolean = false,
     renderMenusInPlace: Boolean = false,
     pressedPodcastIdForPreview: Int? = null,
 ) {
+    // Skeletons only before the library has loaded once (design audit 5.4, review of audit 5).
+    var libraryLoadedOnce by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var libraryWasRefreshing by remember { mutableStateOf(false) }
+    LaunchedEffect(refreshing, podcasts.isNotEmpty()) {
+        if (podcasts.isNotEmpty() || (libraryWasRefreshing && !refreshing)) libraryLoadedOnce = true
+        libraryWasRefreshing = refreshing
+    }
     val podcastBackground = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
         PodcastDarkBackground
     } else {
@@ -477,7 +517,7 @@ private fun PodcastLibraryPanel(
         }
     }
     val refreshDescription = stringResource(R.string.podcast_refresh)
-    val panelShape = if (framed) PodcastPanelShape else RoundedCornerShape(0.dp)
+    val panelShape = if (framed) PodcastPanelShape else androidx.compose.ui.graphics.RectangleShape
     val panelModifier = if (framed) {
         modifier.border(
             1.dp,
@@ -511,12 +551,7 @@ private fun PodcastLibraryPanel(
                 if (showTitle) {
                     // Compact title row (APK-3.5 review: the header was too tall).
                     Row(
-                        modifier = Modifier.height(
-                            when {
-                                largeControls -> 48.dp
-                                else -> 40.dp
-                            },
-                        ),
+                        modifier = Modifier.heightIn(min = 48.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -524,12 +559,10 @@ private fun PodcastLibraryPanel(
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(start = if (framed) 0.dp else 2.dp),
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontSize = if (largeControls) 25.sp else 21.sp,
-                                lineHeight = if (largeControls) 30.sp else 25.sp,
-                            ),
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            style = ru.e1173.nookast.designsystem.NookType.display.scaled(if (largeControls) 1.12f else 1f),
+                            color = ru.e1173.nookast.designsystem.LocalNookastColors.current.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         // A background refresh over a list already shown is quiet (user, 9.11.2026).
                         if (refreshing && podcasts.isEmpty()) {
@@ -540,12 +573,38 @@ private fun PodcastLibraryPanel(
                                 strokeWidth = 2.dp,
                             )
                         }
+                        if (onOpenSearch != null && !searchInControls) {
+                            ru.e1173.nookast.designsystem.NookHeaderDisc(
+                                ru.e1173.nookast.designsystem.NookIcons.Search,
+                                stringResource(R.string.dashboard_search),
+                                onOpenSearch,
+                            )
+                        }
                     }
                 }
+                val controlScale = if (largeControls) 4f / 3f else 1f
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                // The toggle is exactly as tall as the sort control, which a large font may grow.
+                var controlHeight by remember { mutableStateOf(PodcastControlHeight) }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // The search disc joins the row only where the pane has room for it next to a usable sort.
+                // The search disc joins the row only if the sort label still fits whole beside it (audit
+                // of З, C2): measured in the current font, so a large font drops the disc instead.
+                val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+                val sortLabels = listOf(stringResource(R.string.podcast_sort_updated), stringResource(R.string.podcast_sort_title))
+                val labelWidth = with(density) {
+                    sortLabels.maxOf { textMeasurer.measure(it, ru.e1173.nookast.designsystem.NookType.body, maxLines = 1).size.width }.toDp()
+                }
+                val segment = minOf(controlHeight - 8.dp, 36.dp * controlScale)
+                val searchDiscWidth = minOf(controlHeight, PodcastActionHeight * controlScale)
+                // Sort: label + 12 dp padding each side + 12 dp gap + chevron + 2 dp outline + 8 dp to the toggle.
+                val sortNeeds = labelWidth + 12.dp * 2 + 12.dp + 16.dp * controlScale + 2.dp + 8.dp
+                val rowNeeds = sortNeeds + segment * 2 + 8.dp + 8.dp + searchDiscWidth
+                val searchFits = onOpenSearch != null && searchInControls && maxWidth >= PodcastSearchInRowMinWidth &&
+                    maxWidth >= rowNeeds
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(IntrinsicSize.Min)
                         .padding(
                             top = when {
                                 wideMaster -> if (largeControls) 12.dp else 10.dp
@@ -564,11 +623,34 @@ private fun PodcastLibraryPanel(
                         initiallyExpanded = sortMenuInitiallyExpanded,
                         renderInPlace = renderMenusInPlace,
                         // A wide screen keeps the control at a phone width and moves the toggle right.
-                        modifier = Modifier.weight(1f, fill = false).widthIn(max = 420.dp).fillMaxWidth().padding(end = 8.dp),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .widthIn(max = 420.dp)
+                            .fillMaxWidth()
+                            .padding(end = 8.dp)
+                            .onSizeChanged { controlHeight = with(density) { it.height.toDp() } },
+                        scale = controlScale,
                     )
-                    if (showViewToggle) {
-                        PodcastViewToggle(viewMode, onViewModeChanged, Modifier.fillMaxHeight())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (showViewToggle) {
+                            PodcastViewToggle(viewMode, onViewModeChanged, height = controlHeight, scale = controlScale)
+                        }
+                        if (searchFits && onOpenSearch != null) {
+                            // Flat, on the controls' centre line, 8 dp visibly after the toggle.
+                            val searchDisc = minOf(controlHeight, PodcastActionHeight * controlScale)
+                            Spacer(Modifier.width((8.dp - (controlHeight - searchDisc) / 2).coerceAtLeast(0.dp)))
+                            ru.e1173.nookast.designsystem.NookHeaderDisc(
+                                ru.e1173.nookast.designsystem.NookIcons.Search,
+                                stringResource(R.string.dashboard_search),
+                                onOpenSearch,
+                                // Up to 40 dp on the controls' centre line; laid out at their height.
+                                discSize = searchDisc,
+                                zone = controlHeight,
+                                elevated = false,
+                            )
+                        }
                     }
+                }
                 }
             }
             if (framed) {
@@ -592,22 +674,33 @@ private fun PodcastLibraryPanel(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (sorted.isEmpty() && !refreshing) {
+            if (sorted.isEmpty() && (!refreshing || libraryLoadedOnce)) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        stringResource(R.string.podcast_library_empty),
-                        modifier = Modifier.padding(24.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ru.e1173.nookast.designsystem.NookEmptyState(
+                        title = stringResource(R.string.empty_library_title),
+                        message = stringResource(R.string.empty_library_message),
+                        actionLabel = stringResource(R.string.empty_find_podcast),
+                        onAction = onOpenSearch,
                     )
+                }
+            } else if (sorted.isEmpty() && !libraryLoadedOnce) {
+                // First load with nothing cached: placeholder tiles (design audit 5.4); an empty library
+                // that is refreshing keeps its empty state (review of audit 5).
+                Column(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    repeat(2) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            repeat(2) { ru.e1173.nookast.designsystem.NookSkeletonTile(Modifier.weight(1f)) }
+                        }
+                    }
                 }
             } else {
                 AnimatedContent(
                     targetState = forceCompactList || viewMode == PodcastViewMode.LIST,
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
-                        (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 })
+                        (fadeIn(ru.e1173.nookast.designsystem.NookMotion.standard()) + slideInHorizontally(ru.e1173.nookast.designsystem.NookMotion.emphasized()) { it / 12 })
                             .togetherWith(
-                                fadeOut(tween(150)) + slideOutHorizontally(tween(210)) { -it / 12 },
+                                fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast()) + slideOutHorizontally(ru.e1173.nookast.designsystem.NookMotion.standard()) { -it / 12 },
                             )
                     },
                     label = "podcast-library-view",
@@ -678,37 +771,34 @@ private fun PodcastSortMenu(
     sortMode: PodcastSortMode,
     onSortModeChanged: (PodcastSortMode) -> Unit,
     modifier: Modifier = Modifier,
+    scale: Float = 1f,
     initiallyExpanded: Boolean = false,
     renderInPlace: Boolean = false,
 ) {
     var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     // At least the control height; a larger car font grows it instead of pushing the text out.
-    Box(modifier.heightIn(min = PodcastControlHeight).zIndex(if (expanded && renderInPlace) 10f else 0f)) {
+    val minHeight = PodcastControlHeight
+    val colors = ru.e1173.nookast.designsystem.LocalNookastColors.current
+    Box(modifier.heightIn(min = minHeight).zIndex(if (expanded && renderInPlace) 10f else 0f)) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = PodcastControlHeight)
+                .heightIn(min = minHeight)
                 .podcastClickable { expanded = true },
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f),
-            ),
+            // The same backing as the view toggle beside it (DEC-059).
+            shape = ru.e1173.nookast.designsystem.NookShapes.m,
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.cardOutline),
         ) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = PodcastControlHeight).padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().heightIn(min = minHeight).padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // The «Sort» caption lives inside the control (Stitch §6.1), saving a row.
                 Column(Modifier.weight(1f)) {
                     Text(
                         stringResource(R.string.podcast_sort_label).uppercase(),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
-                            lineHeight = 12.sp,
-                            letterSpacing = 0.6.sp,
-                        ),
+                        style = ru.e1173.nookast.designsystem.NookType.meta.copy(letterSpacing = 0.6.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
@@ -720,35 +810,22 @@ private fun PodcastSortMenu(
                                 R.string.podcast_sort_title
                             },
                         ),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 18.sp,
-                            fontWeight = FontWeight.Medium,
-                        ),
+                        style = ru.e1173.nookast.designsystem.NookType.body,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                ChevronGlyph(down = true, modifier = Modifier.size(16.dp))
+                ChevronGlyph(down = true, modifier = Modifier.size(16.dp * scale))
             }
         }
         if (!renderInPlace) {
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.widthIn(min = 220.dp),
-                shape = RoundedCornerShape(14.dp),
-                containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
-            ) {
-                ru.e1173.nookast.designsystem.InterfaceScaled {
+            ru.e1173.nookast.designsystem.NookMenu(expanded, { expanded = false }, minWidth = 220.dp) {
                     PodcastSortMenuItems(sortMode) { mode ->
                         onSortModeChanged(mode)
                         expanded = false
                     }
-                }
             }
         }
     }
@@ -761,14 +838,11 @@ private fun PodcastSortMenuSurface(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.widthIn(min = 220.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-        ),
-        shadowElevation = 10.dp,
+        modifier = modifier.widthIn(min = 220.dp).floatingShadow(ru.e1173.nookast.designsystem.NookShapes.mRadius),
+        shape = ru.e1173.nookast.designsystem.NookShapes.m,
+        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+        border = BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
+        shadowElevation = 0.dp,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
             PodcastSortMenuItems(sortMode, onSelect)
@@ -811,66 +885,22 @@ internal fun PodcastViewToggle(
     viewMode: PodcastViewMode,
     onViewModeChanged: (PodcastViewMode) -> Unit,
     modifier: Modifier = Modifier,
+    height: Dp = PodcastControlHeight,
+    scale: Float = 1f,
 ) {
-    Surface(
-        modifier = modifier.heightIn(min = PodcastControlHeight),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(Modifier.padding(4.dp)) {
-            ViewModeButton(
-                selected = viewMode == PodcastViewMode.GRID,
-                description = stringResource(R.string.podcast_view_grid),
-                onClick = { onViewModeChanged(PodcastViewMode.GRID) },
-            ) {
-                GridGlyph(
-                    Modifier.size(19.dp),
-                    color = if (viewMode == PodcastViewMode.GRID) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            ViewModeButton(
-                selected = viewMode == PodcastViewMode.LIST,
-                description = stringResource(R.string.podcast_view_list),
-                onClick = { onViewModeChanged(PodcastViewMode.LIST) },
-            ) {
-                ListGlyph(
-                    Modifier.size(19.dp),
-                    color = if (viewMode == PodcastViewMode.LIST) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ViewModeButton(
-    selected: Boolean,
-    description: String,
-    onClick: () -> Unit,
-    glyph: @Composable () -> Unit,
-) {
-    Surface(
-        modifier = Modifier
-            .size(36.dp)
-            .podcastClickable(onClick = onClick)
-            .semantics { contentDescription = description },
-        shape = RoundedCornerShape(8.dp),
-        color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
-        contentColor = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        shadowElevation = if (selected) 2.dp else 0.dp,
-    ) { Box(contentAlignment = Alignment.Center) { glyph() } }
+    // The shared segmented control (DEC-059): glyphs centred in square segments, as tall as the sort.
+    val modes = listOf(PodcastViewMode.GRID, PodcastViewMode.LIST)
+    ru.e1173.nookast.designsystem.NookSegmentedToggle(
+        segments = listOf(
+            ru.e1173.nookast.designsystem.NookSegment(ru.e1173.nookast.designsystem.NookIcons.Grid, stringResource(R.string.podcast_view_grid)),
+            ru.e1173.nookast.designsystem.NookSegment(ru.e1173.nookast.designsystem.NookIcons.ListView, stringResource(R.string.podcast_view_list)),
+        ),
+        selectedIndex = modes.indexOf(viewMode),
+        onSelect = { onViewModeChanged(modes[it]) },
+        height = height,
+        modifier = modifier,
+        scale = scale,
+    )
 }
 
 @Composable
@@ -888,7 +918,7 @@ private fun PodcastGridItem(
             .background(
                 if (pressed) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.46f)
                 else Color.Transparent,
-                RoundedCornerShape(14.dp),
+                ru.e1173.nookast.designsystem.NookShapes.m,
             )
             .podcastClickable(onClick = onClick)
             .padding(bottom = 3.dp),
@@ -903,18 +933,14 @@ private fun PodcastGridItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .shadow(5.dp, RoundedCornerShape(14.dp * ARTWORK_CORNER_SCALE), clip = false),
+                    .nookElevation(ru.e1173.nookast.designsystem.NookElevation.Level1, ru.e1173.nookast.designsystem.NookShapes.mRadius * ARTWORK_CORNER_SCALE),
             )
             freshness?.let { FreshnessPill(it, Modifier.align(Alignment.BottomStart).padding(6.dp)) }
             }
             Spacer(Modifier.height(5.dp))
             Text(
                 podcast.name.ifBlank { stringResource(R.string.unknown_podcast) },
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 13.sp,
-                    lineHeight = 16.sp,
-                ),
-                fontWeight = FontWeight.Medium,
+                style = ru.e1173.nookast.designsystem.NookType.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -922,10 +948,7 @@ private fun PodcastGridItem(
             Spacer(Modifier.height(2.dp))
             Text(
                 buildPodcastGridCountLine(total, unplayed),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    lineHeight = 12.sp,
-                ),
+                style = ru.e1173.nookast.designsystem.NookType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -944,7 +967,7 @@ private fun PodcastListItem(
 ) {
     val total = podcast.episodeCount ?: 0
     val unplayed = (total - podcast.episodesPlayed).coerceAtLeast(0)
-    val shape = RoundedCornerShape(12.dp)
+    val shape = ru.e1173.nookast.designsystem.NookShapes.m
     Surface(
         modifier = Modifier.fillMaxWidth().podcastClickable(onClick = onClick),
         shape = shape,
@@ -974,8 +997,7 @@ private fun PodcastListItem(
             Column(Modifier.weight(1f)) {
                 Text(
                     podcast.name.ifBlank { stringResource(R.string.unknown_podcast) },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
+                    style = ru.e1173.nookast.designsystem.NookType.body,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1007,6 +1029,8 @@ private fun buildPodcastGridCountLine(total: Int, unplayed: Int): String =
 @Composable
 private fun PodcastDetailsPanel(
     podcastId: Int,
+    currentEpisodeId: Int?,
+    isPlaying: Boolean,
     catalog: PodcastSubscriptionEntity?,
     details: PodcastDetails?,
     detailsLoading: Boolean,
@@ -1019,7 +1043,6 @@ private fun PodcastDetailsPanel(
     pendingProgress: Map<Int, ProgressOutboxEntity>,
     progressUpdatedAt: Map<Int, Long>,
     largeControls: Boolean,
-    touchTarget: Dp,
     showBack: Boolean,
     onBack: () -> Unit,
     onDescriptionCollapsedChanged: (Int, Boolean) -> Unit,
@@ -1094,7 +1117,7 @@ private fun PodcastDetailsPanel(
         }
     }
 
-    val panelShape = RoundedCornerShape(0.dp)
+    val panelShape = androidx.compose.ui.graphics.RectangleShape
     val panelModifier = modifier
     val podcastBackground = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
         PodcastDarkBackground
@@ -1182,27 +1205,16 @@ private fun PodcastDetailsPanel(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val backDescription = stringResource(R.string.podcast_back_to_library)
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .podcastClickable(onClick = onBack)
-                        .semantics {
-                        contentDescription = backDescription
-                    },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    // The back button floats over the glass in its disc, as in every header (user, 2.11.2026).
-                    Box(
-                        Modifier.size(38.dp).floatingDisc().background(ru.e1173.nookast.designsystem.LocalNookastColors.current.tintContainer, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { BackArrowGlyph(Modifier.size(18.dp)) }
-                }
+                // The back button floats over the glass in its disc, as in every header (user, 2.11.2026).
+                ru.e1173.nookast.designsystem.NookHeaderDisc(
+                    ru.e1173.nookast.designsystem.NookIcons.ChevronLeft,
+                    stringResource(R.string.podcast_back_to_library),
+                    onBack,
+                )
                 Text(
                     text = name.ifBlank { stringResource(R.string.podcasts_title) },
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
+                    style = ru.e1173.nookast.designsystem.NookType.body,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1237,6 +1249,7 @@ private fun PodcastDetailsPanel(
             item {
                 PodcastHero(
                     name = name,
+                    coverScroll = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 0f },
                     artworkUrl = artwork,
                     artworkRevision = catalog?.refreshedAtEpochMs,
                     author = author,
@@ -1245,7 +1258,6 @@ private fun PodcastDetailsPanel(
                     showBack = false,
                     actionInProgress = actionInProgress,
                     largeControls = largeControls,
-                    touchTarget = touchTarget,
                     continueEnabled = continueIndex != null && queueEntries.isNotEmpty(),
                     onBack = onBack,
                     onContinue = {
@@ -1262,25 +1274,14 @@ private fun PodcastDetailsPanel(
                     FeedProblemPill(feedProblem, feedReadByPhone, onChangeFeedUrl = { feedUrlDialog = true })
                 }
             }
-            if (detailsLoading) {
-                item {
-                    Column(
-                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.podcast_details_loading),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                }
+            // Episodes to come, only when none are shown yet (design audit 5.4: a refresh stays quiet).
+            if (detailsLoading && allEpisodes.isEmpty()) {
+                item { ru.e1173.nookast.designsystem.NookSkeletonRows(5, artwork = false) }
             }
             if (actionError || selectionCommitFailed) {
                 item {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = ru.e1173.nookast.designsystem.NookShapes.m,
                         color = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ) {
@@ -1302,45 +1303,12 @@ private fun PodcastDetailsPanel(
                 )
             }
             item {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                ru.e1173.nookast.designsystem.NookSectionTitle(
+                    stringResource(R.string.podcast_episodes),
+                    Modifier.padding(horizontal = 2.dp),
+                    scale = if (largeControls) 1.12f else 1f,
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.podcast_episodes),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 15.sp,
-                                lineHeight = 18.sp,
-                            ),
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .podcastClickable {
-                                onHidePlayedChanged(podcastId, !hidePlayed)
-                            }
-                            .padding(horizontal = 4.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        CompactCheckbox(checked = hidePlayed)
-                        Text(
-                            stringResource(
-                                if (hidePlayed) R.string.podcast_show_played
-                                else R.string.podcast_hide_played,
-                            ),
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp,
-                                fontWeight = FontWeight.Normal,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    HidePlayedToggle(hidePlayed) { onHidePlayedChanged(podcastId, !hidePlayed) }
                 }
             }
             if (visibleEpisodes.isEmpty() && !detailsLoading) {
@@ -1371,7 +1339,8 @@ private fun PodcastDetailsPanel(
                         downloaded = rowDownloaded,
                         downloading = downloadState == EpisodeDownloadState.QUEUED || downloadState == EpisodeDownloadState.DOWNLOADING,
                         downloadProgress = downloadProgress[episode.episodeId],
-                        playing = false,
+                        playing = episode.episodeId == currentEpisodeId && isPlaying,
+                        current = episode.episodeId == currentEpisodeId,
                         largeControls = largeControls,
                         selected = episode.episodeId in selectedEpisodeIds,
                         selectionMode = selectionMode,
@@ -1432,7 +1401,6 @@ private fun PodcastHero(
     showBack: Boolean,
     actionInProgress: Boolean,
     largeControls: Boolean,
-    touchTarget: Dp,
     continueEnabled: Boolean,
     onBack: () -> Unit,
     onContinue: () -> Unit,
@@ -1440,9 +1408,11 @@ private fun PodcastHero(
     onChangeFeedUrl: () -> Unit = {},
     settingsMenuInitiallyExpanded: Boolean = false,
     renderMenusInPlace: Boolean = false,
+    /** How far the page has scrolled past the top, in pixels: the cover lags at 0.3 (design audit 4.6). */
+    coverScroll: () -> Float = { 0f },
 ) {
     val coverSize = if (largeControls) 148.dp else 118.dp
-    val shape = RoundedCornerShape(16.dp)
+    val shape = ru.e1173.nookast.designsystem.NookShapes.l
     val heroBackground = Color.Transparent
     val artworkBitmap = rememberArtworkBitmap(artworkUrl, artworkRevision)
     Surface(
@@ -1473,6 +1443,7 @@ private fun PodcastHero(
                         .weight(0.6f, fill = false)
                         .widthIn(max = coverSize)
                         .aspectRatio(1f)
+                        .graphicsLayer { translationY = coverScroll() * COVER_PARALLAX }
                         .drawBehind {
                             with(this) { drawCssShadow(coverGlow, 28.dp, 12.dp.toPx() * ARTWORK_CORNER_SCALE, dy = 8.dp) }
                         },
@@ -1482,7 +1453,7 @@ private fun PodcastHero(
                         Text(
                             author.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1490,10 +1461,8 @@ private fun PodcastHero(
                     }
                     Text(
                         name.ifBlank { stringResource(R.string.unknown_podcast) },
-                        style = if (largeControls) MaterialTheme.typography.headlineSmall
-                        else MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = ru.e1173.nookast.designsystem.NookType.heroTitle.scaled(if (largeControls) 1.12f else 1f),
+                        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.textPrimary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1520,48 +1489,24 @@ private fun PodcastHero(
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         val continueButtonEnabled = continueEnabled && !actionInProgress
-                        Surface(
-                            // Shrinks before the gear does, so the gear never leaves a narrow pane.
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .height(if (largeControls) 52.dp else 38.dp)
-                                .podcastClickable(
-                                    enabled = continueButtonEnabled,
-                                    onClick = onContinue,
-                                ),
-                            shape = RoundedCornerShape(11.dp),
-                            color = if (continueButtonEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            contentColor = if (continueButtonEnabled) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                        val buttonScale = if (largeControls) 4f / 3f else 1f
+                        // Shrinks before the gear does, so the gear never leaves a narrow pane.
+                        ru.e1173.nookast.designsystem.NookButton(
+                            onClick = onContinue,
+                            modifier = Modifier.weight(1f, fill = false),
+                            enabled = continueButtonEnabled,
+                            scale = buttonScale,
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = if (largeControls) 16.dp else 13.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                            ) {
-                                ru.e1173.nookast.designsystem.PlayPauseGlyph(false, androidx.compose.material3.LocalContentColor.current, 34.dp)
-                                Text(
-                                    stringResource(R.string.podcast_continue),
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontSize = 13.sp,
-                                        lineHeight = 16.sp,
-                                        fontWeight = FontWeight.Medium,
-                                    ),
-                                    maxLines = 1,
-                                )
-                            }
+                            ru.e1173.nookast.designsystem.PlayPauseGlyph(false, androidx.compose.material3.LocalContentColor.current, 30.dp * buttonScale)
+                            Text(
+                                stringResource(R.string.podcast_continue),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
                         }
                         PodcastSettingsMenu(
                             actionInProgress = actionInProgress,
                             largeControls = largeControls,
-                            touchTarget = touchTarget,
                             onUnsubscribe = onUnsubscribe,
                             onChangeFeedUrl = onChangeFeedUrl,
                             initiallyExpanded = settingsMenuInitiallyExpanded,
@@ -1578,7 +1523,6 @@ private fun PodcastHero(
 private fun PodcastSettingsMenu(
     actionInProgress: Boolean,
     largeControls: Boolean,
-    touchTarget: Dp,
     onUnsubscribe: () -> Unit,
     onChangeFeedUrl: () -> Unit = {},
     initiallyExpanded: Boolean = false,
@@ -1586,43 +1530,33 @@ private fun PodcastSettingsMenu(
 ) {
     var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     val settingsDescription = stringResource(R.string.podcast_settings)
-    Box(
-        Modifier
-            .size(if (largeControls) touchTarget else 38.dp)
-            .zIndex(if (expanded && renderInPlace) 10f else 0f),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .podcastClickable(enabled = !actionInProgress) { expanded = true }
-                .semantics {
-                contentDescription = settingsDescription
-            },
-            shape = RoundedCornerShape(11.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (actionInProgress) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    GearGlyph(
-                        Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.primary,
+    // The shared icon disc (DEC-059): as tall as «Continue» beside it, flat, the glyph half of it.
+    val disc = PodcastActionHeight * if (largeControls) 4f / 3f else 1f
+    Box(Modifier.zIndex(if (expanded && renderInPlace) 10f else 0f)) {
+        ru.e1173.nookast.designsystem.NookHeaderDisc(
+            icon = if (actionInProgress) null else ru.e1173.nookast.designsystem.NookIcons.Settings,
+            contentDescription = settingsDescription,
+            onClick = { expanded = true },
+            discSize = disc,
+            iconSize = disc / 2,
+            // Laid out at the disc, so the row keeps the height of «Continue».
+            zone = disc,
+            elevated = false,
+            enabled = !actionInProgress,
+            content = if (actionInProgress) {
+                {
+                    CircularProgressIndicator(
+                        Modifier.size(disc / 2),
+                        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
+                        strokeWidth = 2.dp,
                     )
                 }
-            }
-        }
+            } else {
+                null
+            },
+        )
         if (!renderInPlace) {
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.widthIn(min = if (largeControls) 300.dp else 220.dp),
-                shape = RoundedCornerShape(14.dp),
-                containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
-                border = BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
-            ) {
-                ru.e1173.nookast.designsystem.InterfaceScaled {
+            ru.e1173.nookast.designsystem.NookMenu(expanded, { expanded = false }, minWidth = if (largeControls) 300.dp else 220.dp) {
                     PodcastSettingsMenuItems(
                         largeControls = largeControls,
                         onChangeFeedUrl = {
@@ -1634,7 +1568,6 @@ private fun PodcastSettingsMenu(
                             onUnsubscribe()
                         },
                     )
-                }
             }
         }
     }
@@ -1647,14 +1580,11 @@ private fun PodcastSettingsMenuSurface(
     largeControls: Boolean = false,
 ) {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
-        ),
-        shadowElevation = 10.dp,
+        modifier = modifier.floatingShadow(ru.e1173.nookast.designsystem.NookShapes.mRadius),
+        shape = ru.e1173.nookast.designsystem.NookShapes.m,
+        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+        border = BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
+        shadowElevation = 0.dp,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
             PodcastSettingsMenuItems(largeControls, onUnsubscribe)
@@ -1676,12 +1606,11 @@ private fun PodcastSettingsMenuItems(
             top = if (largeControls) 14.dp else 8.dp,
             bottom = 4.dp,
         ),
-        style = MaterialTheme.typography.labelLarge,
+        style = ru.e1173.nookast.designsystem.NookType.rowTitle,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.SemiBold,
     )
     DropdownMenuItem(
-        text = { Text(stringResource(R.string.podcast_change_feed_url), fontWeight = FontWeight.SemiBold) },
+        text = { Text(stringResource(R.string.podcast_change_feed_url), style = ru.e1173.nookast.designsystem.NookType.rowTitle) },
         leadingIcon = {
             Surface(
                 modifier = Modifier.size(if (largeControls) 38.dp else 30.dp),
@@ -1691,9 +1620,8 @@ private fun PodcastSettingsMenuItems(
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         "RSS",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = if (largeControls) 11.sp else 9.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        style = ru.e1173.nookast.designsystem.NookType.navLabel.scaled(if (largeControls) 1.222f else 1f),
+                        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                     )
                 }
             }
@@ -1706,7 +1634,7 @@ private fun PodcastSettingsMenuItems(
             Text(
                 stringResource(R.string.podcast_unsubscribe_full),
                 color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.SemiBold,
+                style = ru.e1173.nookast.designsystem.NookType.rowTitle,
             )
         },
         leadingIcon = {
@@ -1730,23 +1658,8 @@ private fun PodcastSettingsMenuItems(
 
 @Composable
 private fun UnsubscribeGlyph(modifier: Modifier = Modifier, color: Color) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.14f
-        drawLine(
-            color,
-            Offset(size.width * 0.22f, size.height * 0.22f),
-            Offset(size.width * 0.78f, size.height * 0.78f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.78f, size.height * 0.22f),
-            Offset(size.width * 0.22f, size.height * 0.78f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Close, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -1770,7 +1683,7 @@ private fun PodcastSelectionToolbar(
     val actionColor = MaterialTheme.colorScheme.onPrimaryContainer
     Surface(
         modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.66f),
-        shape = RoundedCornerShape(13.dp),
+        shape = ru.e1173.nookast.designsystem.NookShapes.m,
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = actionColor,
         tonalElevation = 3.dp,
@@ -1780,18 +1693,21 @@ private fun PodcastSelectionToolbar(
                 modifier = Modifier.fillMaxWidth().heightIn(min = if (largeControls) 48.dp else 42.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
+                // The shared icon button as a bare glyph on the toolbar (DEC-059).
+                ru.e1173.nookast.designsystem.NookHeaderDisc(
+                    icon = ru.e1173.nookast.designsystem.NookIcons.ChevronLeft,
+                    contentDescription = stringResource(R.string.back),
                     onClick = onExit,
+                    discSize = 38.dp * if (largeControls) 4f / 3f else 1f,
+                    zone = if (largeControls) 48.dp else 42.dp,
+                    fill = Color.Transparent,
+                    tint = actionColor,
                     enabled = enabled,
-                    modifier = Modifier.size(if (largeControls) 48.dp else 42.dp),
-                ) {
-                    BackArrowGlyph(Modifier.size(20.dp), color = actionColor)
-                }
+                )
                 Text(
                     stringResource(R.string.podcast_selected_count, selectedCount),
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.rowTitle,
                     maxLines = 1,
                 )
             }
@@ -1849,7 +1765,7 @@ private fun PodcastSelectionAction(
             .heightIn(min = 46.dp)
             .podcastClickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
-        shape = RoundedCornerShape(10.dp),
+        shape = ru.e1173.nookast.designsystem.NookShapes.s,
         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.10f),
     ) {
         Column(
@@ -1860,10 +1776,7 @@ private fun PodcastSelectionAction(
             glyph()
             Text(
                 label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 9.sp,
-                    lineHeight = 10.sp,
-                ),
+                style = ru.e1173.nookast.designsystem.NookType.meta,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 maxLines = 2,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1885,17 +1798,9 @@ private fun PodcastDescriptionCard(
     val fallback = stringResource(R.string.description_unavailable)
     val body = normalizeDescriptionText(description).ifBlank { fallback }
     val needsMore = body.length > 150
-    val descriptionBackground = MaterialTheme.colorScheme.surfaceContainerLow
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = PodcastCardShape,
-        color = descriptionBackground,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-        ),
-        tonalElevation = 1.dp,
-    ) {
+    // «… more» covers the text end in the card's own colour.
+    val descriptionBackground = ru.e1173.nookast.designsystem.LocalNookastColors.current.let { it.surface.compositeOver(it.background) }
+    Box(Modifier.fillMaxWidth().nookCard()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().podcastClickable {
@@ -1912,19 +1817,15 @@ private fun PodcastDescriptionCard(
                 Text(
                     stringResource(R.string.podcast_description),
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 13.sp,
-                        lineHeight = 16.sp,
-                    ),
-                    fontWeight = FontWeight.Medium,
+                    style = ru.e1173.nookast.designsystem.NookType.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 ChevronGlyph(down = collapsed, modifier = Modifier.size(16.dp))
             }
             AnimatedVisibility(
                 visible = !collapsed,
-                enter = fadeIn(tween(180)) + expandVertically(tween(220)),
-                exit = fadeOut(tween(120)) + shrinkVertically(tween(180)),
+                enter = fadeIn(ru.e1173.nookast.designsystem.NookMotion.standard()) + expandVertically(ru.e1173.nookast.designsystem.NookMotion.standard()),
+                exit = fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast()) + shrinkVertically(ru.e1173.nookast.designsystem.NookMotion.standard()),
             ) {
                 Column {
                     Spacer(Modifier.height(4.dp))
@@ -1938,19 +1839,13 @@ private fun PodcastDescriptionCard(
                             RichDescriptionText(
                                 html = description,
                                 fallback = fallback,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 11.sp,
-                                    lineHeight = 13.sp,
-                                ),
+                                style = ru.e1173.nookast.designsystem.NookType.meta,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
                             Text(
                                 body,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 11.sp,
-                                    lineHeight = 13.sp,
-                                ),
+                                style = ru.e1173.nookast.designsystem.NookType.meta,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 3,
                                 overflow = if (needsMore) TextOverflow.Clip else TextOverflow.Ellipsis,
@@ -1963,12 +1858,8 @@ private fun PodcastDescriptionCard(
                                     .align(Alignment.BottomEnd)
                                     .background(descriptionBackground)
                                     .padding(start = 4.dp),
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 11.sp,
-                                    lineHeight = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
+                                style = ru.e1173.nookast.designsystem.NookType.navLabel,
+                                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                             )
                         }
                     }
@@ -1988,8 +1879,8 @@ internal fun CompactCheckbox(checked: Boolean) {
     Canvas(
         Modifier
             .size(15.dp)
-            .border(1.dp, borderColor, RoundedCornerShape(3.dp))
-            .background(fillColor, RoundedCornerShape(3.dp)),
+            .border(1.dp, borderColor, ru.e1173.nookast.designsystem.NookShapes.checkbox)
+            .background(fillColor, ru.e1173.nookast.designsystem.NookShapes.checkbox),
     ) {
         if (checked) {
             val path = Path().apply {
@@ -2048,118 +1939,19 @@ private fun PodcastSelectionPrompt(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun GearGlyph(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
-) {
-    val gearPath = remember {
-        PathParser().parsePathString(
-            "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.5a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
-        ).toPath()
-    }
-    Canvas(modifier) {
-        withTransform({
-            scale(size.width / 24f, size.height / 24f, pivot = Offset.Zero)
-        }) {
-            val stroke = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-            drawPath(gearPath, color, style = stroke)
-            drawCircle(color, radius = 3f, center = Offset(12f, 12f), style = stroke)
-        }
-    }
-}
-
-@Composable
 private fun ChevronGlyph(down: Boolean, modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier) {
-        val path = Path()
-        if (down) {
-            path.moveTo(size.width * 0.2f, size.height * 0.36f)
-            path.lineTo(size.width * 0.5f, size.height * 0.66f)
-            path.lineTo(size.width * 0.8f, size.height * 0.36f)
-        } else {
-            path.moveTo(size.width * 0.2f, size.height * 0.64f)
-            path.lineTo(size.width * 0.5f, size.height * 0.34f)
-            path.lineTo(size.width * 0.8f, size.height * 0.64f)
-        }
-        drawPath(path, color, style = Stroke(size.minDimension * 0.12f, cap = StrokeCap.Round))
-    }
-}
-
-@Composable
-private fun GridGlyph(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-) {
-    Canvas(modifier) {
-        val cell = size.minDimension * 0.34f
-        val gap = size.minDimension * 0.13f
-        listOf(0f to 0f, cell + gap to 0f, 0f to cell + gap, cell + gap to cell + gap)
-            .forEach { (x, y) ->
-                drawRoundRect(
-                    color,
-                    topLeft = Offset(x + size.width * 0.03f, y + size.height * 0.03f),
-                    size = androidx.compose.ui.geometry.Size(cell, cell),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
-                )
-            }
-    }
-}
-
-@Composable
-private fun ListGlyph(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-) {
-    Canvas(modifier) {
-        repeat(3) { index ->
-            val y = size.height * (0.2f + index * 0.3f)
-            drawCircle(color, size.minDimension * 0.07f, Offset(size.width * 0.12f, y))
-            drawLine(
-                color,
-                Offset(size.width * 0.28f, y),
-                Offset(size.width * 0.92f, y),
-                strokeWidth = size.minDimension * 0.1f,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
-}
-
-@Composable
-private fun RefreshGlyph(modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier) {
-        drawArc(
-            color,
-            startAngle = -55f,
-            sweepAngle = 285f,
-            useCenter = false,
-            style = Stroke(size.minDimension * 0.1f, cap = StrokeCap.Round),
-        )
-        val path = Path().apply {
-            moveTo(size.width * 0.76f, size.height * 0.08f)
-            lineTo(size.width * 0.9f, size.height * 0.28f)
-            lineTo(size.width * 0.65f, size.height * 0.3f)
-            close()
-        }
-        drawPath(path, color)
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(if (down) ru.e1173.nookast.designsystem.NookIcons.ChevronDown else ru.e1173.nookast.designsystem.NookIcons.ChevronUp, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
 private fun CheckmarkGlyph(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
+    color: Color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
 ) {
-    Canvas(modifier) {
-        val path = Path().apply {
-            moveTo(size.width * 0.18f, size.height * 0.54f)
-            lineTo(size.width * 0.42f, size.height * 0.76f)
-            lineTo(size.width * 0.84f, size.height * 0.25f)
-        }
-        drawPath(path, color, style = Stroke(size.minDimension * 0.13f, cap = StrokeCap.Round))
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Check, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -2168,31 +1960,8 @@ private fun SelectAllGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onPrimaryContainer,
 ) {
-    Canvas(modifier) {
-        val stroke = Stroke(size.minDimension * 0.08f, cap = StrokeCap.Round)
-        drawRoundRect(
-            color,
-            topLeft = Offset(size.width * 0.12f, size.height * 0.12f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.56f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.08f),
-            style = stroke,
-        )
-        drawRoundRect(
-            color.copy(alpha = 0.72f),
-            topLeft = Offset(size.width * 0.32f, size.height * 0.32f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.56f, size.height * 0.56f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.08f),
-            style = stroke,
-        )
-        if (allSelected) {
-            val path = Path().apply {
-                moveTo(size.width * 0.43f, size.height * 0.60f)
-                lineTo(size.width * 0.56f, size.height * 0.72f)
-                lineTo(size.width * 0.79f, size.height * 0.46f)
-            }
-            drawPath(path, color, style = stroke)
-        }
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(if (allSelected) ru.e1173.nookast.designsystem.NookIcons.SelectAllChecked else ru.e1173.nookast.designsystem.NookIcons.SelectAll, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -2200,33 +1969,8 @@ private fun QueueAddGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onPrimaryContainer,
 ) {
-    Canvas(modifier) {
-        val strokeWidth = size.minDimension * 0.09f
-        repeat(3) { index ->
-            val y = size.height * (0.25f + index * 0.25f)
-            drawLine(
-                color,
-                Offset(size.width * 0.12f, y),
-                Offset(size.width * 0.62f, y),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round,
-            )
-        }
-        drawLine(
-            color,
-            Offset(size.width * 0.78f, size.height * 0.48f),
-            Offset(size.width * 0.78f, size.height * 0.88f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.58f, size.height * 0.68f),
-            Offset(size.width * 0.98f, size.height * 0.68f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.ListPlus, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -2234,44 +1978,8 @@ private fun MarkUnplayedGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onPrimaryContainer,
 ) {
-    Canvas(modifier) {
-        drawCircle(
-            color,
-            radius = size.minDimension * 0.34f,
-            style = Stroke(size.minDimension * 0.09f),
-        )
-        drawCircle(color, radius = size.minDimension * 0.1f)
-    }
-}
-
-@Composable
-private fun BackArrowGlyph(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Canvas(modifier) {
-        drawLine(
-            color,
-            Offset(size.width * 0.2f, size.height * 0.5f),
-            Offset(size.width * 0.86f, size.height * 0.5f),
-            strokeWidth = size.minDimension * 0.1f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.2f, size.height * 0.5f),
-            Offset(size.width * 0.48f, size.height * 0.22f),
-            strokeWidth = size.minDimension * 0.1f,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.2f, size.height * 0.5f),
-            Offset(size.width * 0.48f, size.height * 0.78f),
-            strokeWidth = size.minDimension * 0.1f,
-            cap = StrokeCap.Round,
-        )
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.CircleDot, contentDescription = null, tint = color, modifier = modifier)
 }
 
 /**
@@ -2318,15 +2026,14 @@ private fun FreshnessPill(freshness: ru.e1173.nookast.data.PodcastFreshness, mod
     val alarm = freshness == ru.e1173.nookast.data.PodcastFreshness.FEED_UNAVAILABLE
     Text(
         label,
-        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp),
-        fontWeight = FontWeight.SemiBold,
+        style = ru.e1173.nookast.designsystem.NookType.navLabel,
         color = Color.White,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
             .background(
-                if (alarm) Color(0xE6D9475A) else Color.Black.copy(alpha = 0.62f),
-                RoundedCornerShape(50),
+                if (alarm) ru.e1173.nookast.designsystem.NookFixedColors.AlarmBadge else Color.Black.copy(alpha = 0.62f),
+                ru.e1173.nookast.designsystem.NookShapes.full,
             )
             .padding(horizontal = 7.dp, vertical = 2.dp),
     )
@@ -2377,7 +2084,7 @@ private fun FeedUrlDialog(
                     Text(
                         feedUrlResultText(outcome),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = if (error) MaterialTheme.colorScheme.error else ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                     )
                 }
             }
@@ -2445,7 +2152,7 @@ private fun FeedProblemPill(
     val colors = ru.e1173.nookast.designsystem.LocalNookastColors.current
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     var explain by remember { mutableStateOf(false) }
-    val coral = if (colors.isDark) Color(0xFFFF6E61) else Color(0xFFED6575)
+    val coral = ru.e1173.nookast.designsystem.NookFixedColors.alertCoral(colors.isDark)
     val tone = if (readByPhone) colors.textSecondary else coral
     val since = problem.failingSinceEpochMs?.let {
         java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
@@ -2463,11 +2170,10 @@ private fun FeedProblemPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Box(Modifier.size(7.dp).background(if (readByPhone) Color(0xFFE0A030) else coral, CircleShape))
+            Box(Modifier.size(7.dp).background(if (readByPhone) ru.e1173.nookast.designsystem.NookFixedColors.Amber else coral, CircleShape))
             Text(
                 if (since != null) "$label · $since" else label,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
-                fontWeight = FontWeight.SemiBold,
+                style = ru.e1173.nookast.designsystem.NookType.label,
                 color = tone,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -2509,3 +2215,5 @@ internal fun feedErrorText(kind: ru.e1173.nookast.data.remote.ServerFeedError): 
     ru.e1173.nookast.data.remote.ServerFeedError.THROTTLED -> R.string.feed_error_throttled
     else -> R.string.feed_error_other
 }
+
+private const val COVER_PARALLAX = 0.3f

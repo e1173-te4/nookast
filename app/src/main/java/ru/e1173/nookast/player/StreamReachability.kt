@@ -99,6 +99,7 @@ class StreamReachabilityClient(
     companion object {
         /** Android's own connectivity check: answers 204 without content. */
         const val CONNECTIVITY_CHECK_URL = "https://connectivitycheck.gstatic.com/generate_204"
+        const val YANDEX_CHECK_URL = "https://ya.ru/"
         private const val PROBE_TIMEOUT_SECONDS = 6L
 
         internal fun isReachableResponseCode(code: Int): Boolean = code in 200..299

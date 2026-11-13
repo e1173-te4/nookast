@@ -7,6 +7,10 @@ import android.content.SharedPreferences
 class PlaybackPreferences(context: Context) {
     private val preferences = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
+    init {
+        if (RETIRED_AUDIO_KEYS.any(preferences::contains)) preferences.edit { RETIRED_AUDIO_KEYS.forEach(::remove) }
+    }
+
     var downloadWholeEpisodeOnPlayback: Boolean
         get() = preferences.getBoolean(KEY_DOWNLOAD_ON_PLAYBACK, false)
         set(value) = preferences.edit { putBoolean(KEY_DOWNLOAD_ON_PLAYBACK, value) }
@@ -36,7 +40,7 @@ class PlaybackPreferences(context: Context) {
     var manualQueuePosition: QueueInsertionPosition
         get() = QueueInsertionPosition.fromStoredValue(
             preferences.getString(KEY_MANUAL_QUEUE_POSITION, null),
-            default = QueueInsertionPosition.LAST,
+            default = QueueInsertionPosition.AFTER_CURRENT,
         )
         set(value) = preferences.edit { putString(KEY_MANUAL_QUEUE_POSITION, value.name) }
 
@@ -80,58 +84,6 @@ class PlaybackPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_AUTO_ADD_STARTED_EPISODE_TO_QUEUE, true)
         set(value) = preferences.edit { putBoolean(KEY_AUTO_ADD_STARTED_EPISODE_TO_QUEUE, value) }
 
-    var audioOverallGainDb: Int
-        get() = preferences.getInt(KEY_AUDIO_OVERALL_GAIN_DB, 0)
-            .coerceIn(
-                AudioProcessingSettings.MIN_OVERALL_GAIN_DB,
-                AudioProcessingSettings.MAX_OVERALL_GAIN_DB,
-            )
-        set(value) = preferences.edit {
-            putInt(
-                KEY_AUDIO_OVERALL_GAIN_DB,
-                value.coerceIn(
-                    AudioProcessingSettings.MIN_OVERALL_GAIN_DB,
-                    AudioProcessingSettings.MAX_OVERALL_GAIN_DB,
-                ),
-            )
-        }
-
-    var audioBassDb: Int
-        get() = preferences.getInt(KEY_AUDIO_BASS_DB, 0)
-            .coerceIn(AudioProcessingSettings.MIN_BASS_DB, AudioProcessingSettings.MAX_BASS_DB)
-        set(value) = preferences.edit {
-            putInt(
-                KEY_AUDIO_BASS_DB,
-                value.coerceIn(
-                    AudioProcessingSettings.MIN_BASS_DB,
-                    AudioProcessingSettings.MAX_BASS_DB,
-                ),
-            )
-        }
-
-    var audioSpeechClarity: Int
-        get() = preferences.getInt(KEY_AUDIO_SPEECH_CLARITY, 0)
-            .coerceIn(
-                AudioProcessingSettings.MIN_SPEECH_CLARITY,
-                AudioProcessingSettings.MAX_SPEECH_CLARITY,
-            )
-        set(value) = preferences.edit {
-            putInt(
-                KEY_AUDIO_SPEECH_CLARITY,
-                value.coerceIn(
-                    AudioProcessingSettings.MIN_SPEECH_CLARITY,
-                    AudioProcessingSettings.MAX_SPEECH_CLARITY,
-                ),
-            )
-        }
-
-    val audioProcessingSettings: AudioProcessingSettings
-        get() = AudioProcessingSettings(
-            overallGainDb = audioOverallGainDb,
-            bassDb = audioBassDb,
-            speechClarity = audioSpeechClarity,
-        )
-
     var aheadCacheClearRequested: Boolean
         get() = preferences.getBoolean(KEY_AHEAD_CACHE_CLEAR_REQUESTED, false)
         set(value) = preferences.edit { putBoolean(KEY_AHEAD_CACHE_CLEAR_REQUESTED, value) }
@@ -159,11 +111,6 @@ class PlaybackPreferences(context: Context) {
         fun isSeekPreference(key: String?): Boolean =
             key == KEY_SEEK_BACK_SECONDS || key == KEY_SEEK_FORWARD_SECONDS
 
-        fun isAudioProcessingPreference(key: String?): Boolean =
-            key == KEY_AUDIO_OVERALL_GAIN_DB ||
-                key == KEY_AUDIO_BASS_DB ||
-                key == KEY_AUDIO_SPEECH_CLARITY
-
         private const val NAME = "playback_preferences"
         private const val KEY_DOWNLOAD_ON_PLAYBACK = "download_whole_episode_on_playback"
         private const val KEY_AHEAD_CACHE_MB = "ahead_cache_megabytes"
@@ -180,9 +127,9 @@ class PlaybackPreferences(context: Context) {
             "auto_mark_played_remaining_minutes"
         private const val KEY_AUTO_ADD_STARTED_EPISODE_TO_QUEUE =
             "auto_add_started_episode_to_queue"
-        private const val KEY_AUDIO_OVERALL_GAIN_DB = "audio_overall_gain_db"
-        private const val KEY_AUDIO_BASS_DB = "audio_bass_db"
-        private const val KEY_AUDIO_SPEECH_CLARITY = "audio_speech_clarity"
+
+        // The platform-effect settings before the rework (З12): removed, not migrated (new scales).
+        private val RETIRED_AUDIO_KEYS = listOf("audio_overall_gain_db", "audio_bass_db", "audio_speech_clarity")
         private const val KEY_AHEAD_CACHE_CLEAR_REQUESTED = "ahead_cache_clear_requested"
     }
 }
@@ -200,6 +147,8 @@ enum class QueueSwipeAction {
 }
 
 enum class QueueInsertionPosition {
+    /** Right after the episode playing now; the top when it is not in the queue (user, 11.11.2026). */
+    AFTER_CURRENT,
     FIRST,
     LAST;
 

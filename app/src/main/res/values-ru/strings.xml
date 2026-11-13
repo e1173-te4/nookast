@@ -33,16 +33,7 @@
     <string name="font_scale">Масштаб шрифта</string>
     <string name="copy_report">Скопировать отчёт</string>
     <string name="device_report">Отчёт об устройстве Нукаста</string>
-    <string name="connected_home_title">Подключено к PinePods</string>
-    <string name="sync_no_pending_changes">Все локальные изменения синхронизированы</string>
-    <plurals name="sync_pending_changes">
-        <item quantity="one">%1$d изменение ожидает синхронизации</item>
-        <item quantity="few">%1$d изменения ожидают синхронизации</item>
-        <item quantity="many">%1$d изменений ожидают синхронизации</item>
-        <item quantity="other">%1$d изменения ожидают синхронизации</item>
-    </plurals>
     <string name="refresh">Обновить</string>
-    <string name="disconnect">Отключиться</string>
     <string name="queue_title">Следующие</string>
     <string name="tab_queue">Очередь</string>
     <string name="dashboard_search">Найти и добавить подкаст</string>
@@ -77,18 +68,7 @@
         <item quantity="many">%1$d эпизодов</item>
         <item quantity="other">%1$d эпизода</item>
     </plurals>
-    <string name="not_synced_yet">Ещё не синхронизировано</string>
-    <string name="updated_at">Обновлено %1$s</string>
-    <string name="try_again">Повторить</string>
     <string name="queue_empty">Очередь пуста</string>
-    <string name="queue_empty_help">Добавленные в PinePods эпизоды появятся здесь после синхронизации.</string>
-    <plurals name="queue_more_items">
-        <item quantity="one">И ещё %1$d эпизод</item>
-        <item quantity="few">И ещё %1$d эпизода</item>
-        <item quantity="many">И ещё %1$d эпизодов</item>
-        <item quantity="other">И ещё %1$d эпизода</item>
-    </plurals>
-    <string name="unknown_episode">Эпизод %1$d</string>
     <string name="duration_minutes">%1$d мин</string>
     <string name="duration_hours">%1$d ч</string>
     <string name="duration_hours_minutes_words">%1$d ч %2$d мин</string>
@@ -99,8 +79,6 @@
     <string name="player_title">Проигрыватель</string>
     <string name="play">Слушать</string>
     <string name="pause">Пауза</string>
-    <string name="seek_back">−10 сек</string>
-    <string name="seek_forward">+30 сек</string>
     <string name="seek_back_seconds">Перемотать назад на %1$d секунд</string>
     <string name="seek_forward_seconds">Перемотать вперёд на %1$d секунд</string>
     <string name="move_up">Вверх</string>
@@ -122,25 +100,15 @@
     <string name="theme_system">Как в системе</string>
     <string name="theme_light">Светлая</string>
     <string name="theme_dark">Тёмная</string>
-    <string name="download">Скачать</string>
-    <string name="download_queued">В очереди</string>
-    <string name="downloading">Загрузка…</string>
-    <string name="downloaded">Офлайн</string>
-    <string name="download_retry">Повторить</string>
     <string name="crash_recovery_title">Нукаст завершился со сбоем</string>
     <string name="crash_recovery_help">Технический отчёт сохранён без пароля и API-ключа. Скопируйте его перед повторным запуском.</string>
     <string name="crash_report_clip_label">Отчёт о сбое Нукаста</string>
     <string name="copy_crash_report">Скопировать отчёт</string>
     <string name="retry_start">Попробовать снова</string>
-    <string name="offline_stream_title">Источник аудио недоступен</string>
-    <string name="offline_stream_host">Нет ответа от %1$s.</string>
-    <string name="offline_buffer_remaining">В буфере осталось примерно %1$s воспроизведения.</string>
-    <string name="offline_buffer_empty">Буфер воспроизведения почти исчерпан.</string>
     <string name="extended_diagnostics">Расширенная диагностика</string>
     <string name="diagnostics_running">Проверка…</string>
     <string name="diagnostic_available">%1$s — доступен, %2$d мс</string>
     <string name="diagnostic_unavailable">%1$s — недоступен</string>
-    <string name="pinepods_fallback_active">CDN подкаста недоступен — PinePods готовит резервную копию.</string>
     <string name="playback_tab">Воспроизведение</string>
     <string name="description_tab">Описание</string>
     <string name="collapse_player">Свернуть проигрыватель</string>
@@ -165,13 +133,24 @@
     <string name="episode_number_episode">Э%1$d</string>
     <string name="episode_number_season">С%1$d</string>
     <string name="open_now_playing">Открыть плеер</string>
-    <string name="audio_processing_title">Обработка звука</string>
-    <string name="audio_overall_gain">Общее усиление</string>
-    <string name="audio_bass">Бас</string>
-    <string name="audio_speech_clarity">Чёткость речи</string>
-    <string name="audio_decibel_value">%1$d дБ</string>
-    <string name="audio_safe_limit">Безопасный предел без клиппинга</string>
-    <string name="audio_unavailable">Недоступно</string>
+    <string name="sound_this_podcast">Этот подкаст</string>
+    <string name="sound_all_podcasts">Все подкасты</string>
+    <string name="sound_volume">Громкость</string>
+    <string name="sound_mono">Моно</string>
+    <string name="sound_even_loudness">Ровная громкость</string>
+    <string name="sound_even_loudness_hint">Подтягивает тихие подкасты и тихие голоса</string>
+    <string name="sound_speech_clarity">Чёткость речи</string>
+    <string name="sound_voice_depth">Глубина голоса</string>
+    <string name="sound_shorten_pauses">Сжимать паузы</string>
+    <string name="sound_speaker_trim">На встроенном динамике</string>
+    <string name="sound_compare">Сравнить</string>
+    <string name="sound_compare_hint">Удерживайте, чтобы услышать исходный звук</string>
+    <string name="sound_compare_on">Исходный звук</string>
+    <string name="sound_voice_light_rests">Свет в такт голосу на это время отдыхает</string>
+    <string name="sound_limiter_holding">Ограничитель сдерживает пики</string>
+    <string name="sound_unavailable">Недоступно для этого выпуска</string>
+    <string name="sound_off">Выкл.</string>
+    <string name="sound_plus_decibels">+%1$d дБ</string>
     <string name="audio_bitrate_kbps">%1$d кбит/с</string>
     <string name="chapter_number">Глава %1$d</string>
     <string name="current_episode">Сейчас играет</string>
@@ -181,7 +160,7 @@
     <string name="source_rss_host">RSS · %1$s</string>
     <string name="source_pinepods_copy">копия на сервере PinePods</string>
     <string name="server_copy_playing">Играет копия с сервера PinePods</string>
-    <string name="server_copy_offer_hint">Источник недоступен с этого устройства. Сервер может скачать выпуск и отдавать его вам; после отметки «Прослушан» копия удалится.</string>
+    <string name="server_copy_offer_hint">Отсюда выпуск недоступен, но сервер может скачать его и отдавать вам.</string>
     <string name="server_copy_offer">Скачать на сервер и слушать</string>
     <string name="server_copy_downloading">Скачивание на сервер: %1$d %%</string>
     <string name="server_copy_ready">Скачано на сервер</string>
@@ -329,7 +308,6 @@
     <string name="podcast_unsubscribe_full">Отписаться от подкаста</string>
     <string name="podcast_action_error">Не удалось сохранить изменение. Можно безопасно повторить.</string>
     <string name="podcast_hide_played">Скрыть прослушанные</string>
-    <string name="podcast_show_played">Показать прослушанные</string>
     <string name="podcast_description">О подкасте</string>
     <string name="podcast_more">Подробнее</string>
     <string name="description_more">Ещё</string>
@@ -349,7 +327,6 @@
     <string name="podcast_clear_selection_short">Снять выбор</string>
     <string name="podcast_mark_played_short">Прослушано</string>
     <string name="podcast_mark_unplayed_short">Не прослушано</string>
-    <string name="podcast_details_loading">Загружаем подкаст…</string>
     <string name="podcast_no_visible_episodes">В этой раскладке нет выпусков.</string>
     <string name="podcast_back_to_library">Назад к подкастам</string>
     <string name="dashboard_error_no_cache">Не удалось загрузить дашборд. Проверьте подключение к серверу и повторите.</string>
@@ -374,7 +351,6 @@
     <string name="dashboard_liked_empty">Понравившихся выпусков пока нет.</string>
     <string name="dashboard_downloaded">Скачанные</string>
     <string name="dashboard_downloaded_empty">На этом устройстве пока нет готовых офлайн-выпусков.</string>
-    <string name="dashboard_loading">Загружаем сохранённые данные дашборда…</string>
     <string name="dashboard_hours_minutes">%1$d ч %2$d мин</string>
     <string name="dashboard_minutes">%1$d мин</string>
     <string name="podcast_add_to_queue">Добавить в «Следующие»</string>
@@ -384,6 +360,7 @@
     <string name="settings_queue_on_playback_description">Куда добавить выпуск, запущенный не из списка «Следующие».</string>
     <string name="settings_queue_manual_title">Кнопка «Добавить в очередь»</string>
     <string name="settings_queue_manual_description">Куда поместить выпуск, добавленный кнопкой очереди.</string>
+    <string name="settings_queue_after_current">После текущего</string>
     <string name="settings_queue_first">Первым</string>
     <string name="settings_queue_last">Последним</string>
     <string name="settings_queue_swipe_actions">ДЕЙСТВИЯ СМАХИВАНИЯ</string>
@@ -516,6 +493,7 @@
     <string name="about_screen">Экран</string>
     <string name="about_screen_value">%1$d × %2$d dp · %3$d dpi</string>
     <string name="about_server">Сервер PinePods</string>
+    <string name="about_server_version">Версия сервера</string>
     <string name="about_build_debug">отладочная</string>
     <string name="about_build_release">релизная</string>
     <string name="diagnostics_journal_group">Журнал</string>
@@ -752,4 +730,19 @@
     <string name="feed_problem_server_only">Лента работает: телефон её читает. Сервер не может её обновить: %1$s. Новые выпуски приходят в приложение прямо из ленты; на сервере их не будет, пока он не сможет её прочитать.</string>
     <string name="feed_problem_private_address">Лента работает: телефон её читает. С версии 0.9.1 PinePods не читает ленты, адрес которых ведёт в вашу домашнюю сеть, — как здесь (сервер в той же сети, например audiobookshelf). Новые выпуски приходят в приложение прямо из ленты; для сервера дайте ленте публичный адрес.</string>
     <string name="feed_problem">Сервер не может обновить ленту: %1$s.</string>
+    <!-- Пустые состояния и ошибки (аудит дизайна 5.6). -->
+    <string name="empty_feed_title">Новых выпусков нет</string>
+    <string name="empty_feed_message">Здесь появятся новые выпуски ваших подкастов.</string>
+    <string name="empty_feed_error_title">Лента не загрузилась</string>
+    <string name="empty_retry">Повторить</string>
+    <string name="empty_queue_message">Добавьте выпуск пунктом «Добавить в очередь» в его меню.</string>
+    <string name="empty_library_title">Подписок пока нет</string>
+    <string name="empty_library_message">Найдите подкаст и подпишитесь — он появится здесь.</string>
+    <string name="empty_find_podcast">Найти подкаст</string>
+    <string name="empty_search_title">Поиск подкастов</string>
+    <string name="empty_search_nothing_message">Попробуйте другое название или вставьте ссылку на RSS-ленту.</string>
+    <string name="empty_search_failed_title">Поиск недоступен</string>
+    <string name="settings_voice_light">Свет в такт голосу</string>
+    <string name="settings_voice_light_help">Свечение кнопки Play слегка следует за громкостью речи</string>
+    <string name="settings_voice_light_paused">Не действует, пока включено «Сжимать паузы»</string>
 </resources>

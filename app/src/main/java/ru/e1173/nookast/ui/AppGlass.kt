@@ -33,6 +33,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import ru.e1173.nookast.designsystem.LocalNookastColors
+import ru.e1173.nookast.designsystem.nookElevation
 
 /**
  * Space the bottom chrome (navigation bar and mini-player) takes over the content. Lazy screens
@@ -90,9 +91,10 @@ internal fun Modifier.appGlass(
         // The blur reads the content at full resolution (user, 2.11.2026: covers and bold titles
         // shimmered under the glass while scrolling, as a downscaled input steps from pixel to pixel).
         inputScale = HazeInputScale.None
-        // Blur only from Android 12. The RenderScript blur of 1.2.2 on Android 11 drew banded halos of the
-        // wrong shape with hard dark steps in the light theme (user, 9.11.2026); the veil replaces it there.
-        blurEnabled = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+        // Real blur on Android 11 too (RenderScript). Without it (1.2.4) a header over a scrolled list turned
+        // into a dark slab and text showed through the bars on the head unit (user, 11.11.2026); the uneven
+        // shadows reported on 9.11 were Android's elevation shadows, now floatingShadow.
+        blurEnabled = true
     }
 }
 
@@ -146,7 +148,7 @@ private const val EDGE_STEPS = 8
 // No veil and no shade under the status bar (user, 31.10.2026: at night a scrolled header turned a
 // little lighter): the header is the blur of what lies under it and nothing else.
 private const val TOP_GLASS_VEIL = 0f
-private const val TOP_GLASS_FADE_MS = 220
+private const val TOP_GLASS_FADE_MS = ru.e1173.nookast.designsystem.NookMotion.STANDARD_MS
 private val TopGlassBlur = 18.dp
 
 /**
@@ -290,17 +292,3 @@ internal fun Modifier.glassEdgeFade(top: Dp = GlassEdgeFade, bottom: Dp = 0.dp):
     }
 
 internal val GlassEdgeFade = 6.dp
-
-/**
- * A round button of a header floats over the glass (user, 2.11.2026: "as if it hangs in the air over
- * the panel" — do it for every header with buttons): a soft shadow under its disc. Every header
- * button with a disc wears it; the 48 dp touch target leaves the shadow room.
- */
-internal fun Modifier.floatingDisc(shape: androidx.compose.ui.graphics.Shape = androidx.compose.foundation.shape.CircleShape): Modifier =
-    shadow(
-        elevation = 5.dp,
-        shape = shape,
-        clip = false,
-        ambientColor = Color.Black.copy(alpha = 0.14f),
-        spotColor = Color.Black.copy(alpha = 0.26f),
-    )

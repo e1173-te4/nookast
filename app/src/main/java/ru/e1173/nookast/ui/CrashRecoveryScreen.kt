@@ -1,5 +1,7 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -46,8 +48,7 @@ fun CrashRecoveryScreen(
     ) {
         Text(
             stringResource(R.string.crash_recovery_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
+            style = ru.e1173.nookast.designsystem.NookType.heroTitle,
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -59,7 +60,7 @@ fun CrashRecoveryScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Button(
+            NookButton(
                 onClick = {
                     val clipboard = context.getSystemService(
                         Context.CLIPBOARD_SERVICE,
@@ -77,7 +78,7 @@ fun CrashRecoveryScreen(
             ) {
                 Text(stringResource(R.string.copy_crash_report))
             }
-            OutlinedButton(
+            NookButton(variant = NookButtonVariant.Outline,
                 onClick = onRetry,
                 modifier = Modifier.weight(1f),
             ) {

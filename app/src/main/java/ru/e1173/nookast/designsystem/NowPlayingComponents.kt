@@ -103,6 +103,8 @@ fun NookSeekButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     scale: Float = 1f,
+    /** Inside the transport: true when Play stands to the right, false to the left (4.9). */
+    playOnRight: Boolean? = null,
 ) {
     val colors = nook
     val interaction = remember { MutableInteractionSource() }
@@ -121,7 +123,8 @@ fun NookSeekButton(
             .shadow(if (colors.isDark) 0.dp else 6.dp * scale, CircleShape, ambientColor = colors.accent.copy(alpha = 0.10f), spotColor = colors.accent.copy(alpha = 0.10f))
             .background(colors.seekSurface, CircleShape)
             .drawBehind { if (colors.isDark) drawGlassHighlight() }
-            .border(1.dp, if (colors.isDark) colors.divider.copy(alpha = 0.9f) else colors.surfaceOutline, CircleShape)
+            .then(if (playOnRight != null) Modifier.seekPlayReflection(playOnRight) else Modifier)
+            .border(1.dp, if (colors.isDark) colors.divider.scaleAlpha(0.9f) else colors.surfaceOutline, CircleShape)
             .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
@@ -156,6 +159,8 @@ fun NookPlayPauseButton(
     // DEC-024: 80 dp (the mockups had 90).
     val size = 80.dp * scale
     val glowIntensity by animateFloatAsState(if (playing) 1f else 0.55f, tween(240), label = "playGlow")
+    // In the open player the shared light drives the glow (design audit 4.5); elsewhere its own state.
+    val playLight = LocalPlayLight.current
     Box(
         modifier
             .size(size)
@@ -165,10 +170,10 @@ fun NookPlayPauseButton(
                     // Night reference: box-shadow 0 0 32px accent .65, 0 0 64px accentStrong .40,
                     // 0 8px 24px black .5 — a tight bright aura, not a wide wash. Dimmer when paused.
                     val r = this.size.minDimension / 2f
-                    val k = glowIntensity
+                    val k = playLight?.playGlow() ?: glowIntensity
                     drawCssShadow(Color.Black.copy(alpha = 0.5f), 24.dp, r, dy = 8.dp)
-                    drawCssShadow(colors.accentStrong.copy(alpha = 0.40f * k), 64.dp, r)
-                    drawCssShadow(colors.accent.copy(alpha = 0.65f * k), 32.dp, r)
+                    drawCssShadow(colors.accentStrong.copy(alpha = lit(0.40f * k)), 64.dp, r)
+                    drawCssShadow(colors.accent.copy(alpha = lit(0.65f * k)), 32.dp, r)
                 }
             }
             .shadow(
@@ -185,14 +190,10 @@ fun NookPlayPauseButton(
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            buffering -> CircularProgressIndicator(
-                color = colors.onAccent,
-                strokeWidth = 3.dp * scale,
-                modifier = Modifier.size(40.dp * scale),
-            )
-            else -> PlayPauseGlyph(playing, colors.onAccent, size)
-        }
+        // Buffering (design audit 5.3): the glyph stays at 0.6 and a 270° arc turns along the disc's
+        // inner edge; the glow keeps the current state.
+        Box(Modifier.alpha(if (buffering) BUFFERING_GLYPH_ALPHA else 1f)) { PlayPauseGlyph(playing, colors.onAccent, size) }
+        if (buffering) BufferingArc(colors.onAccent, size, scale)
     }
 }
 
@@ -248,12 +249,97 @@ fun NookMiniPlayButton(
 @Composable
 fun PlayPauseGlyph(playing: Boolean, color: Color, disc: Dp) {
     val k = disc / 80.dp
-    if (playing) {
-        Icon(NookIcons.Pause, null, tint = color, modifier = Modifier.size(36.dp * k))
-    } else {
-        Icon(NookIcons.Play, null, tint = color, modifier = Modifier.padding(start = 4.dp * k).size(40.dp * k))
+    // One glyph that morphs (design audit 5.3): the triangle splits into two halves that become the
+    // bars over Standard; at rest it draws exactly the Play and Pause of the mockup.
+    val reduced = rememberReducedMotion()
+    val morph by animateFloatAsState(
+        if (playing) 1f else 0f,
+        if (reduced) androidx.compose.animation.core.snap() else NookMotion.standard(),
+        label = "playPauseMorph",
+    )
+    androidx.compose.foundation.Canvas(Modifier.size(width = 44.dp * k, height = 40.dp * k)) {
+        val unit = this.size.height / 40f
+        fun play(x: Float, y: Float) = Offset(unit * (4f + x * 40f / 36f), unit * (y * 40f / 36f))
+        fun pause(x: Float, y: Float) = Offset(unit * (4f + x), unit * (2f + y))
+        fun at(p: Offset, q: Offset) = androidx.compose.ui.geometry.lerp(p, q, morph)
+        val left = listOf(
+            at(play(10f, 6f), pause(9.2f, 6.7f)),
+            at(play(19.5f, 11.94f), pause(13.3f, 6.7f)),
+            at(play(19.5f, 24.06f), pause(13.3f, 29.3f)),
+            at(play(10f, 30f), pause(9.2f, 29.3f)),
+        )
+        val right = listOf(
+            at(play(19.5f, 11.94f), pause(22.7f, 6.7f)),
+            at(play(29f, 18f), pause(26.8f, 6.7f)),
+            at(play(29f, 18f), pause(26.8f, 29.3f)),
+            at(play(19.5f, 24.06f), pause(22.7f, 29.3f)),
+        )
+        // The bars keep soft corners: a round-joined 2.4-unit outline of the same colour around bars
+        // inset by its half, so they end at the mockup's 6.5 × 25 units.
+        val soften = androidx.compose.ui.graphics.drawscope.Stroke(
+            width = unit * MORPH_CORNER * morph,
+            join = androidx.compose.ui.graphics.StrokeJoin.Round,
+        )
+        // Both halves in one path, filled once: their shared edge leaves no seam in the triangle.
+        val path = androidx.compose.ui.graphics.Path()
+        listOf(left, right).forEach { quad ->
+            path.moveTo(quad[0].x, quad[0].y)
+            quad.drop(1).forEach { path.lineTo(it.x, it.y) }
+            path.close()
+        }
+        if (morph >= 1f) {
+            // At rest the bars are exactly the mockup's Pause: 6.5 × 25 units with radius 3.2.
+            listOf(8f, 21.5f).forEach { x ->
+                drawRoundRect(
+                    color,
+                    topLeft = pause(x, 5.5f),
+                    size = androidx.compose.ui.geometry.Size(unit * 6.5f, unit * 25f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(unit * 3.2f),
+                )
+            }
+        } else {
+            drawPath(path, color)
+            if (morph > 0f) drawPath(path, color, style = soften)
+        }
     }
 }
+
+private const val MORPH_CORNER = 2.4f
+
+private const val BUFFERING_GLYPH_ALPHA = 0.6f
+
+/** A 270° arc 3 dp wide, 4 dp inside the disc, turning once a second (5.3). */
+@Composable
+private fun BufferingArc(color: Color, disc: Dp, scale: Float) {
+    val reduced = rememberReducedMotion()
+    // Read while drawing (review of audit 5): the arc turns without recomposing the button.
+    val turn = if (reduced) {
+        null
+    } else {
+        androidx.compose.animation.core.rememberInfiniteTransition(label = "bufferingArc").animateFloat(
+            0f,
+            360f,
+            androidx.compose.animation.core.infiniteRepeatable(tween(BUFFERING_TURN_MS, easing = androidx.compose.animation.core.LinearEasing)),
+            label = "bufferingTurn",
+        )
+    }
+    androidx.compose.foundation.Canvas(Modifier.size(disc)) {
+        val stroke = 3.dp.toPx() * scale
+        val inset = 4.dp.toPx() * scale + stroke / 2f
+        drawArc(
+            color,
+            startAngle = (turn?.value ?: 0f) - 90f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = androidx.compose.ui.geometry.Size(this.size.width - 2f * inset, this.size.height - 2f * inset),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+        )
+    }
+}
+
+private const val BUFFERING_TURN_MS = 1000
+private const val MINI_ARC_SCALE = 0.5f
 
 /** Transport row: seek back, Play, seek forward with 24 dp gaps. */
 @Composable
@@ -275,9 +361,11 @@ fun NookTransport(
         horizontalArrangement = Arrangement.spacedBy(24.dp * scale),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NookSeekButton(seekBackSeconds, forward = false, labels.seekBack, onSeekBack, scale = scale)
-        NookPlayPauseButton(playing, buffering, enabled, if (playing) labels.pause else labels.play, onPlayPause, scale = scale)
-        NookSeekButton(seekForwardSeconds, forward = true, labels.seekForward, onSeekForward, scale = scale)
+        val playLight = LocalPlayLight.current
+        NookSeekButton(seekBackSeconds, forward = false, labels.seekBack, onSeekBack, scale = scale, playOnRight = true)
+        // Each tap sends a wave of light through the reflections (design audit 4.10).
+        NookPlayPauseButton(playing, buffering, enabled, if (playing) labels.pause else labels.play, { playLight?.flash(starting = !playing); onPlayPause() }, scale = scale)
+        NookSeekButton(seekForwardSeconds, forward = true, labels.seekForward, onSeekForward, scale = scale, playOnRight = false)
     }
 }
 
@@ -387,7 +475,7 @@ fun NookTimeline(
                 drawRoundRect(colors.track, Offset(startPx, 0f), segment, radius)
                 if (colors.isDark) {
                     drawRoundRect(
-                        colors.divider.copy(alpha = 0.5f),
+                        colors.divider.scaleAlpha(0.5f),
                         Offset(startPx, 0f),
                         segment,
                         radius,
@@ -542,6 +630,10 @@ fun NookChapterPill(
         tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "focalRay",
     )
+    // The open player's light reaches the pill 60 ms after Play (design audit 4.5, 4.10, 4.11).
+    val playLight = LocalPlayLight.current
+    // Read while drawing: the light moves without recomposing the pill (review of audit 5).
+    val k = { playLight?.reflection(PlayLightDelay.CHAPTER) ?: intensity }
     Row(
         modifier
             .fillMaxWidth()
@@ -551,7 +643,7 @@ fun NookChapterPill(
                 if (colors.isDark) {
                     val r = 12.dp.toPx() * scale
                     drawCssShadow(Color.Black.copy(alpha = 0.30f), 12.dp, r, dy = 4.dp)
-                    drawCssShadow(colors.accent.copy(alpha = 0.22f * intensity), 14.dp, r, dy = (-2).dp)
+                    drawCssShadow(colors.accent.copy(alpha = lit(0.22f * k())), 14.dp, r, dy = (-2).dp)
                 }
             }
             .clip(shape)
@@ -563,15 +655,15 @@ fun NookChapterPill(
                 val focus = Offset(size.width / 2f, -12.dp.toPx())
                 val reach = kotlin.math.hypot(size.width / 2f, size.height + 12.dp.toPx())
                 val cone = Brush.radialGradient(
-                    0f to colors.accent.copy(alpha = 0.32f * intensity),
-                    0.45f to colors.accent.copy(alpha = 0.08f * intensity),
+                    0f to colors.accent.copy(alpha = lit(0.32f * k())),
+                    0.45f to colors.accent.copy(alpha = lit(0.08f * k())),
                     0.85f to Color.Transparent,
                     center = focus,
                     radius = reach,
                 )
                 // border-top: 1px accent .7, the other sides the hairline outline.
                 val edge = Brush.verticalGradient(
-                    0f to colors.accent.copy(alpha = 0.70f * intensity),
+                    0f to colors.accent.copy(alpha = lit(0.70f * k())),
                     0.35f to colors.divider,
                     1f to colors.divider,
                 )
@@ -664,6 +756,9 @@ fun NookActionDock(
     scale: Float = 1f,
 ) {
     val colors = nook
+    // The weaker reflection of Play: it now dims with the pill on pause (design audit 4.5).
+    val playLight = LocalPlayLight.current
+    val dk = { playLight?.reflection(PlayLightDelay.DOCK) ?: 1f }
     val shape = RoundedCornerShape(16.dp * scale)
     Row(
         modifier
@@ -673,7 +768,7 @@ fun NookActionDock(
                 if (colors.isDark) {
                     val r = 16.dp.toPx() * scale
                     drawCssShadow(Color.Black.copy(alpha = 0.35f), 16.dp, r, dy = 4.dp)
-                    drawCssShadow(colors.accent.copy(alpha = 0.12f), 16.dp, r, dy = (-2).dp)
+                    drawCssShadow(colors.accent.copy(alpha = lit(0.12f * dk())), 16.dp, r, dy = (-2).dp)
                 }
             }
             .shadow(if (colors.isDark) 0.dp else 4.dp, shape, spotColor = colors.accent.copy(alpha = 0.10f), ambientColor = colors.accent.copy(alpha = 0.05f))
@@ -683,14 +778,14 @@ fun NookActionDock(
                 // radial-gradient(circle at 50% -16px, accent .20 0%, accent .03 60%, surface 100%)
                 // and border-top accent .45: the second, weaker reflection of Play.
                 val cone = Brush.radialGradient(
-                    0f to colors.accent.copy(alpha = 0.20f),
-                    0.60f to colors.accent.copy(alpha = 0.03f),
+                    0f to colors.accent.copy(alpha = lit(0.20f * dk())),
+                    0.60f to colors.accent.copy(alpha = lit(0.03f * dk())),
                     1f to Color.Transparent,
                     center = Offset(size.width / 2f, -16.dp.toPx()),
                     radius = kotlin.math.hypot(size.width / 2f, size.height + 16.dp.toPx()),
                 )
                 val edge = Brush.verticalGradient(
-                    0f to colors.accent.copy(alpha = 0.45f),
+                    0f to colors.accent.copy(alpha = lit(0.45f * dk())),
                     0.35f to colors.divider,
                     1f to colors.divider,
                 )
@@ -714,24 +809,26 @@ fun NookActionDock(
         DockButton(downloadLabel, downloadEnabled, onDownload, Modifier.weight(1f), scale) {
             Box(Modifier.size(24.dp * scale).background(colors.tintContainer, CircleShape), contentAlignment = Alignment.Center) {
                 when (downloadState) {
-                    DockDownloadState.IDLE -> Icon(NookIcons.Download, null, tint = colors.accent, modifier = Modifier.size(14.dp * scale))
+                    DockDownloadState.IDLE -> Icon(NookIcons.Download, null, tint = colors.accentText, modifier = Modifier.size(14.dp * scale))
                     DockDownloadState.DOWNLOADING -> if (downloadProgress == null) {
-                        CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp * scale))
+                        CircularProgressIndicator(color = colors.accentText, strokeWidth = 2.dp, modifier = Modifier.size(16.dp * scale))
                     } else {
                         CircularProgressIndicator(
                             progress = { downloadProgress.coerceIn(0f, 1f) },
-                            color = colors.accent,
+                            color = colors.accentText,
                             trackColor = colors.accent.copy(alpha = 0.25f),
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(16.dp * scale),
                         )
                     }
-                    DockDownloadState.DOWNLOADED -> Icon(NookIcons.Check, null, tint = colors.accent, modifier = Modifier.size(14.dp * scale))
+                    DockDownloadState.DOWNLOADED -> Icon(NookIcons.Check, null, tint = colors.accentText, modifier = Modifier.size(14.dp * scale))
                 }
             }
         }
         Box(Modifier.width(1.dp).height(24.dp * scale).background(colors.divider))
-        DockButton(playedLabel, !played, onPlayed, Modifier.weight(1f), scale) {
+        val dockHaptics = rememberNookHaptics()
+        // Marking played is confirmed by touch (design audit 4.4).
+        DockButton(playedLabel, !played, { if (!played) dockHaptics.confirm(); onPlayed() }, Modifier.weight(1f), scale) {
             Box(
                 Modifier
                     .size(20.dp * scale)
@@ -1213,6 +1310,8 @@ fun NookMiniPlayer(
     val solid = if (colors.isDark) colors.surface.compositeOver(colors.background) else Color.White
     val surface = if (glass != null) solid.copy(alpha = if (colors.isDark) 0.38f else 0.45f) else solid
     val outline = if (colors.isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.07f)
+    // Its Play lights the card at night (design audit 4.12).
+    val lightSource = rememberLightSource()
     Column(
         modifier
             .fillMaxWidth()
@@ -1223,7 +1322,8 @@ fun NookMiniPlayer(
             .clip(shape)
             .then(glass ?: Modifier)
             .background(surface)
-            .border(1.dp, outline, shape),
+            .border(1.dp, outline, shape)
+            .playSourceLight(lightSource, playing, 56.dp * scale, MINI_LIGHT_ALPHA, 48.dp * scale),
     ) {
         Row(
             Modifier
@@ -1263,7 +1363,9 @@ fun NookMiniPlayer(
                 }
             }
             if (onSeekBack != null) MiniSeekButton(seekBackSeconds, forward = false, labels.seekBack, onSeekBack, scale)
-            MiniPlayPause(playing, buffering, enabled, if (playing) labels.pause else labels.play, onPlayPause, scale)
+            Box(Modifier.lightEmitter(lightSource)) {
+                MiniPlayPause(playing, buffering, enabled, if (playing) labels.pause else labels.play, onPlayPause, scale)
+            }
             if (onSeekForward != null) MiniSeekButton(seekForwardSeconds, forward = true, labels.seekForward, onSeekForward, scale)
             Spacer(Modifier.width(4.dp * scale))
             MiniRoundButton(labels.queue, onQueue, scale) {
@@ -1300,10 +1402,9 @@ private fun MiniPlayPause(playing: Boolean, buffering: Boolean, enabled: Boolean
             Modifier.size(38.dp * scale).scale(pressed).background(colors.accent, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            when {
-                buffering -> CircularProgressIndicator(color = colors.onAccent, strokeWidth = 2.2.dp, modifier = Modifier.size(18.dp * scale))
-                else -> PlayPauseGlyph(playing, colors.onAccent, 38.dp * scale)
-            }
+            // The same buffering as the player's Play, at the disc's size (design audit 5.3).
+            Box(Modifier.alpha(if (buffering) BUFFERING_GLYPH_ALPHA else 1f)) { PlayPauseGlyph(playing, colors.onAccent, 38.dp * scale) }
+            if (buffering) BufferingArc(colors.onAccent, 38.dp * scale, scale * MINI_ARC_SCALE)
         }
     }
 }
@@ -1341,3 +1442,5 @@ private fun MiniRoundButton(label: String, onClick: () -> Unit, scale: Float, co
         ) { content() }
     }
 }
+
+private const val MINI_LIGHT_ALPHA = 0.16f

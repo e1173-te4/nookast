@@ -105,9 +105,9 @@ fun NookExpandable(
                 Text(
                     if (expanded) lessLabel else moreLabel,
                     style = TextStyle(fontFamily = Manrope, fontSize = 14.sp, fontWeight = FontWeight(650)),
-                    color = colors.accent,
+                    color = colors.accentText,
                 )
-                Icon(NookIcons.ChevronDown, null, tint = colors.accent, modifier = Modifier.size(16.dp).rotate(chevron))
+                Icon(NookIcons.ChevronDown, null, tint = colors.accentText, modifier = Modifier.size(16.dp).rotate(chevron))
             }
         }
     }

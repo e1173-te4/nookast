@@ -1,5 +1,7 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -140,13 +142,12 @@ internal fun SyncAttentionContent(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (needsSignIn) {
             Text(stringResource(R.string.sync_needs_sign_in), style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = onSignInAgain) { Text(stringResource(R.string.sync_sign_in_again)) }
+            NookButton(onClick = onSignInAgain) { Text(stringResource(R.string.sync_sign_in_again)) }
         }
         if (deadLetters.isNotEmpty()) {
             Text(
                 stringResource(R.string.sync_dead_letters_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+                style = ru.e1173.nookast.designsystem.NookType.rowTitle,
             )
             deadLetters.forEach { letter ->
                 Column(Modifier.fillMaxWidth()) {
@@ -167,9 +168,9 @@ internal fun SyncAttentionContent(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                         if (letter.retryable) {
-                            OutlinedButton(onClick = { onRetry(letter.id) }) { Text(stringResource(R.string.sync_retry)) }
+                            NookButton(variant = NookButtonVariant.Outline, onClick = { onRetry(letter.id) }) { Text(stringResource(R.string.sync_retry)) }
                         }
-                        TextButton(onClick = { onDiscard(letter.id) }) { Text(stringResource(R.string.sync_discard)) }
+                        NookButton(variant = NookButtonVariant.Text, onClick = { onDiscard(letter.id) }) { Text(stringResource(R.string.sync_discard)) }
                     }
                 }
             }

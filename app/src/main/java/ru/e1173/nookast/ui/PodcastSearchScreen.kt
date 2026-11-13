@@ -1,5 +1,7 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.nookCard
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -106,14 +108,19 @@ internal fun PodcastSearchScreen(
                         FoundRow(podcast, state, subscribed.find(podcast), scale, onAdd = { viewModel.add(podcast, onAdded) }, onOpenPodcast = onOpenPodcast, onOpenCard = openCard, title = stringResource(R.string.search_add_by_link))
                     }
                 }
-                state.query.trim().length < 2 -> item(key = "hint") { SearchMessage(stringResource(R.string.search_hint)) }
-                state.searching && state.results.isEmpty() -> item(key = "searching") {
-                    Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = colors.accent)
-                    }
+                state.query.trim().length < 2 -> item(key = "hint") {
+                    ru.e1173.nookast.designsystem.NookEmptyState(stringResource(R.string.empty_search_title), message = stringResource(R.string.search_hint))
                 }
-                state.failed -> item(key = "failed") { SearchMessage(stringResource(R.string.search_failed)) }
-                state.results.isEmpty() && state.source != null -> item(key = "empty") { SearchMessage(stringResource(R.string.search_nothing)) }
+                state.searching && state.results.isEmpty() -> item(key = "searching") {
+                    // Results to come (design audit 5.4).
+                    ru.e1173.nookast.designsystem.NookSkeletonRows(5, Modifier.padding(top = 8.dp))
+                }
+                state.failed -> item(key = "failed") {
+                    ru.e1173.nookast.designsystem.NookEmptyState(stringResource(R.string.empty_search_failed_title), message = stringResource(R.string.search_failed))
+                }
+                state.results.isEmpty() && state.source != null -> item(key = "empty") {
+                    ru.e1173.nookast.designsystem.NookEmptyState(stringResource(R.string.search_nothing), message = stringResource(R.string.empty_search_nothing_message))
+                }
                 else -> {
                     item(key = "results") {
                         SearchGroup {
@@ -184,20 +191,12 @@ private fun SearchBar(query: String, onQuery: (String) -> Unit, onBack: () -> Un
         Modifier.fillMaxSize().padding(start = 4.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val backLabel = stringResource(R.string.back)
-        Box(
-            Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onBack).semantics { contentDescription = backLabel },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(38.dp).floatingDisc().background(colors.tintContainer, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(NookIcons.ChevronLeft, null, tint = colors.accent, modifier = Modifier.size(18.dp))
-            }
-        }
+        ru.e1173.nookast.designsystem.NookHeaderDisc(NookIcons.ChevronLeft, stringResource(R.string.back), onBack)
         Row(
             Modifier
                 .weight(1f)
                 .height(42.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(ru.e1173.nookast.designsystem.NookShapes.m)
                 .background(colors.tintContainer)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -235,13 +234,7 @@ private fun SearchBar(query: String, onQuery: (String) -> Unit, onBack: () -> Un
 
 @Composable
 private fun SearchGroup(content: @Composable () -> Unit) {
-    val colors = LocalNookastColors.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.surface.compositeOver(colors.background)),
-    ) { content() }
+    Column(Modifier.fillMaxWidth().nookCard()) { content() }
 }
 
 /** One found podcast: cover, title and author; the round button adds it or shows it is in the library.
@@ -283,8 +276,7 @@ private fun FoundRow(
         Column(Modifier.weight(1f)) {
             Text(
                 title ?: podcast.title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp * scale, lineHeight = 21.sp * scale),
-                fontWeight = FontWeight.SemiBold,
+                style = ru.e1173.nookast.designsystem.NookType.barTitle.scaled(scale),
                 color = colors.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -302,7 +294,7 @@ private fun FoundRow(
             if (secondLine.isNotBlank()) {
                 Text(
                     secondLine,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp * scale),
+                    style = ru.e1173.nookast.designsystem.NookType.bodySmall.scaled(scale),
                     color = if (feed in state.addFailed) MaterialTheme.colorScheme.error else colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -316,6 +308,7 @@ private fun FoundRow(
 @Composable
 private fun AddButton(adding: Boolean, added: Boolean, scale: Float, onClick: () -> Unit) {
     val colors = LocalNookastColors.current
+    ru.e1173.nookast.designsystem.HapticOutcome(pending = adding, success = added)
     val fill by animateColorAsState(if (added) colors.accent else colors.tintContainer, label = "addFill")
     val label = stringResource(if (added) R.string.search_in_library else R.string.search_add)
     Box(
@@ -328,22 +321,11 @@ private fun AddButton(adding: Boolean, added: Boolean, scale: Float, onClick: ()
         contentAlignment = Alignment.Center,
     ) {
         when {
-            adding -> CircularProgressIndicator(Modifier.size(18.dp * scale), strokeWidth = 2.dp, color = colors.accent)
+            adding -> CircularProgressIndicator(Modifier.size(18.dp * scale), strokeWidth = 2.dp, color = colors.accentText)
             added -> Icon(NookIcons.Check, null, tint = colors.onAccent, modifier = Modifier.size(16.dp * scale))
-            else -> Icon(NookIcons.Plus, null, tint = colors.accent, modifier = Modifier.size(16.dp * scale))
+            else -> Icon(NookIcons.Plus, null, tint = colors.accentText, modifier = Modifier.size(16.dp * scale))
         }
     }
-}
-
-@Composable
-private fun SearchMessage(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = LocalNookastColors.current.textSecondary,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
-    )
 }
 
 /**

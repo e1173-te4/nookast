@@ -45,6 +45,20 @@ data class NookastColors(
     val success: Color,
     val divider: Color,
     val isDark: Boolean,
+    /**
+     * The outline of cards and rows (design audit 11.11.2026, 1.1): the divider at 70 % of its own
+     * alpha. Lavender and Signature light take the divider as is (accent at 12 %, as in the mockups);
+     * replacing the alpha there gave an accent outline at 70 %.
+     */
+    val cardOutline: Color = divider.scaleAlpha(0.7f),
+    /** Text and thin glyphs in the accent: the strong accent by day, the accent at night (audit 1.4). */
+    val accentText: Color = if (isDark) accent else accentStrong,
+    /**
+     * Filled controls with a label (audit 1.2, 11.11.2026): white text on it is at least 4.5:1. The
+     * accent itself in Lavender and Signature by day and in every night theme; the strong accent in
+     * Autumn, Winter and Mint by day. Discs with only a glyph keep the accent gradient (3:1 is enough).
+     */
+    val accentFill: Color = accent,
 )
 
 val LocalNookastColors = staticCompositionLocalOf { nookastColors(ThemePalette.SIGNATURE, dark = false) }
@@ -78,6 +92,7 @@ private val LavenderLight = NookastColors(
     success = Color(0xFF139B69),
     divider = Color(0x1F6A53D6),
     isDark = false,
+    cardOutline = Color(0x1F6A53D6),
 )
 
 private val LavenderDark = NookastColors(
@@ -86,7 +101,7 @@ private val LavenderDark = NookastColors(
     textSecondary = Color(0xFF94A3B8),
     accent = Color(0xFFB35CFF),
     accentStrong = Color(0xFF7C2CFF),
-    onAccent = Color(0xFFF1F5F9),
+    onAccent = Color(0xFF1A0B33),
     artworkPlaceholder = Color(0xFF171324),
     track = Color(0xFF201A33),
     trackFill = Color(0xFFB35CFF),
@@ -118,6 +133,7 @@ private val AutumnLight = NookastColors(
     success = Color(0xFF139B69),
     divider = Color(0xFFE8DDD0),
     isDark = false,
+    accentFill = Color(0xFFA94E27),
 )
 
 private val AutumnDark = NookastColors(
@@ -126,7 +142,7 @@ private val AutumnDark = NookastColors(
     textSecondary = Color(0xFF9E9187),
     accent = Color(0xFFEB7A44),
     accentStrong = Color(0xFFC85A26),
-    onAccent = Color(0xFFE6DFD5),
+    onAccent = Color(0xFF2A1206),
     artworkPlaceholder = Color(0xFF211B18),
     track = Color(0xFF26201D),
     trackFill = Color(0xFFEB7A44),
@@ -158,6 +174,7 @@ private val WinterLight = NookastColors(
     success = Color(0xFF059669),
     divider = Color(0xFFDCE7F0),
     isDark = false,
+    accentFill = Color(0xFF0369A1),
 )
 
 private val WinterDark = NookastColors(
@@ -166,7 +183,7 @@ private val WinterDark = NookastColors(
     textSecondary = Color(0xFF8C9EB5),
     accent = Color(0xFF38BDF8),
     accentStrong = Color(0xFF0EA5E9),
-    onAccent = Color(0xFFF1F5F9),
+    onAccent = Color(0xFF06202E),
     artworkPlaceholder = Color(0xFF131B2A),
     track = Color(0xFF1E293B),
     trackFill = Color(0xFF38BDF8),
@@ -198,6 +215,9 @@ private val MintLight = NookastColors(
     success = Color(0xFF059669),
     divider = Color(0xFFD1FAE5),
     isDark = false,
+    // The 70 % default measured 1.10:1, under the audit's 1.12 floor: the full divider (1.14).
+    cardOutline = Color(0xFFD1FAE5),
+    accentFill = Color(0xFF047857),
 )
 
 private val MintDark = NookastColors(
@@ -206,7 +226,7 @@ private val MintDark = NookastColors(
     textSecondary = Color(0xFF86B3A2),
     accent = Color(0xFF10B981),
     accentStrong = Color(0xFF059669),
-    onAccent = Color(0xFFF1F5F9),
+    onAccent = Color(0xFF04241A),
     artworkPlaceholder = Color(0xFF0D231E),
     track = Color(0xFF112F26),
     trackFill = Color(0xFF10B981),
@@ -239,6 +259,7 @@ private val SignatureLight = NookastColors(
     success = Color(0xFF139B69),
     divider = Color(0x1F5A3A8C),
     isDark = false,
+    cardOutline = Color(0x1F5A3A8C),
 )
 
 private val SignatureDark = NookastColors(
@@ -260,3 +281,6 @@ private val SignatureDark = NookastColors(
     divider = Color(0xFF34224A),
     isDark = true,
 )
+
+/** This colour with its alpha scaled by [factor]; `copy(alpha = …)` would replace a token's own alpha. */
+fun Color.scaleAlpha(factor: Float): Color = copy(alpha = (alpha * factor).coerceIn(0f, 1f))

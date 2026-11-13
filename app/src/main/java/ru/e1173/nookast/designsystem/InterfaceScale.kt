@@ -49,14 +49,16 @@ fun ScaledAlertDialog(
             val colors = LocalNookastColors.current
             androidx.compose.material3.Surface(
                 modifier = modifier
-                    .padding(horizontal = 28.dp)
-                    .widthIn(min = 270.dp, max = 400.dp),
+                    // Room in the dialog window for the shadow, or the window cuts the blur.
+                    .padding(horizontal = 28.dp, vertical = FloatingShadowMargin.Bottom)
+                    .widthIn(min = 270.dp, max = 400.dp)
+                    .nookElevation(NookElevation.Level3, 22.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
                 color = colors.surface,
                 contentColor = colors.textPrimary,
                 border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.surfaceOutline),
                 tonalElevation = 0.dp,
-                shadowElevation = 18.dp,
+                shadowElevation = 0.dp,
             ) {
                 androidx.compose.foundation.layout.Column {
                     androidx.compose.foundation.layout.Column(

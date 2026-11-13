@@ -21,6 +21,20 @@ class AppNavigatorTest {
     }
 
     @Test
+    fun `search opens in the tab it was opened from`() {
+        val nav = navigator()
+        nav.selectTab(AppDestination.PODCASTS)
+        nav.push(Route.Search)
+        assertEquals(AppDestination.PODCASTS, nav.top.destination(nav.tab))
+        assertEquals(listOf(Route.Podcasts, Route.Search), nav.stack())
+        nav.pop()
+        assertEquals(listOf<Route>(Route.Podcasts), nav.stack())
+        nav.selectTab(AppDestination.HOME)
+        nav.push(Route.Search)
+        assertEquals(AppDestination.HOME, nav.top.destination(nav.tab))
+    }
+
+    @Test
     fun `tapping the shown tab returns it to its root`() {
         val nav = navigator()
         nav.push(Route.Playlist(3))

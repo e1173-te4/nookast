@@ -1,5 +1,10 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.lightEmitter
+import ru.e1173.nookast.designsystem.nookPressable
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.nookCard
+import ru.e1173.nookast.designsystem.focusRing
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -53,7 +58,7 @@ import ru.e1173.nookast.designsystem.NookIcons
 import ru.e1173.nookast.designsystem.NookMiniPlayButton
 
 /** One item of an episode row's "⋯" menu. */
-internal data class EpisodeMenuItem(val label: String, val onClick: () -> Unit)
+internal data class EpisodeMenuItem(val label: String, val onClick: () -> Unit, val destructive: Boolean = false)
 
 /**
  * The one episode row of the app (user, 29.10.2026): every list takes the Dashboard's «Continue
@@ -84,6 +89,8 @@ internal fun EpisodeRow(
     modifier: Modifier = Modifier,
     showArtwork: Boolean = false,
     showControls: Boolean = true,
+    /** The episode that is loaded in the player, playing or paused: its Play lights the row (4.12). */
+    current: Boolean = false,
     selected: Boolean = false,
     selectionMode: Boolean = false,
     onLongPress: (() -> Unit)? = null,
@@ -93,26 +100,27 @@ internal fun EpisodeRow(
     // Touch targets grow by a third for the car; text only a little, so a row stays one glance.
     val textScale = if (largeControls) 1.12f else 1f
     val timing = episodeTiming(durationSeconds, listenedSeconds, completed)
-    val shape = RoundedCornerShape(16.dp * scale)
-    val background by animateColorAsState(
-        if (selected) colors.tintContainer.compositeOver(colors.surface.compositeOver(colors.background))
-        else colors.surface.compositeOver(colors.background),
-        tween(180),
-        label = "episodeRowBackground",
-    )
+    val shape = RoundedCornerShape(ru.e1173.nookast.designsystem.NookShapes.lRadius * scale)
     val trailing = selectionMode || showControls
+    // Rows shrink a little and take the press wash (design audit 4.4).
+    val rowPress = remember { MutableInteractionSource() }
+    val rowLight = ru.e1173.nookast.designsystem.rememberLightSource()
     var menuOpen by remember { mutableStateOf(false) }
     Box(modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(shape)
-                .background(background)
-                .border(1.dp, if (selected) colors.accent.copy(alpha = 0.6f) else colors.divider.copy(alpha = 0.7f), shape)
+                .nookPressable(rowPress)
+                .nookCard(
+                    selected,
+                    ru.e1173.nookast.designsystem.NookShapes.lRadius * scale,
+                    light = rowLight.takeIf { current && showControls },
+                    lightPlaying = playing,
+                )
                 .focusRing(shape)
                 .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
+                    interactionSource = rowPress,
+                    indication = androidx.compose.foundation.LocalIndication.current,
                     role = androidx.compose.ui.semantics.Role.Button,
                     onClick = onOpen,
                     onLongClick = onLongPress ?: if (!showControls && menu.isNotEmpty()) ({ menuOpen = true }) else null,
@@ -177,6 +185,7 @@ internal fun EpisodeRow(
                     contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                     onClick = onPlay,
                     size = 38.dp * scale,
+                    modifier = if (current) Modifier.lightEmitter(rowLight) else Modifier,
                 )
                 EpisodeMoreButton(menu, scale)
             }
@@ -211,8 +220,7 @@ internal fun EpisodeRowText(
     Column(modifier) {
         Text(
             cleanEpisodeTitle(title).composed(),
-            style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.5.sp * textScale, lineHeight = 18.sp * textScale),
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.rowTitle.scaled(textScale),
             color = if (completed) colors.textSecondary else colors.textPrimary,
             minLines = titleLines,
             maxLines = titleLines,
@@ -229,7 +237,7 @@ internal fun EpisodeRowText(
         )
         Text(
             subtitle.orEmpty(),
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp * textScale, lineHeight = 15.sp * textScale),
+            style = ru.e1173.nookast.designsystem.NookType.bodySmall.scaled(textScale),
             color = colors.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -241,9 +249,9 @@ internal fun EpisodeRowText(
         ) {
             Text(
                 timeText.orEmpty(),
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp * textScale, lineHeight = 14.sp * textScale),
+                style = ru.e1173.nookast.designsystem.NookType.meta.scaled(textScale),
                 color = if (started) colors.accent else colors.textSecondary,
-                fontWeight = if (started) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = ru.e1173.nookast.designsystem.NookType.markedWeight(started),
                 maxLines = 1,
             )
             EpisodeDownloadMark(downloaded, downloading, downloadProgress, 12.dp * textScale)
@@ -285,21 +293,20 @@ internal fun EpisodeStackText(
     timeColor: Color? = null,
 ) {
     val colors = LocalNookastColors.current
-    val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = 14.5.sp * textScale, lineHeight = 18.sp * textScale)
+    val titleStyle = ru.e1173.nookast.designsystem.NookType.rowTitle.scaled(textScale)
     val titleSlot = with(LocalDensity.current) { (titleStyle.lineHeight * 2).toDp() }
     Column(modifier) {
         Text(
             meta,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp * textScale, lineHeight = 14.sp * textScale),
-            color = colors.textSecondary.copy(alpha = 0.78f),
+            style = ru.e1173.nookast.designsystem.NookType.meta.scaled(textScale),
+            color = colors.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Box(Modifier.fillMaxWidth().heightIn(min = titleSlot), contentAlignment = Alignment.CenterStart) {
             Text(
                 cleanEpisodeTitle(title).composed(),
-                style = titleStyle,
-                fontWeight = FontWeight.SemiBold,
+                style = ru.e1173.nookast.designsystem.NookType.rowTitle,
                 color = if (completed) colors.textSecondary else colors.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -311,9 +318,9 @@ internal fun EpisodeStackText(
         ) {
             Text(
                 timeText.orEmpty(),
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp * textScale, lineHeight = 14.sp * textScale),
+                style = ru.e1173.nookast.designsystem.NookType.meta.scaled(textScale),
                 color = timeColor ?: if (started) colors.accent else colors.textSecondary,
-                fontWeight = if (started || timeColor != null) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = ru.e1173.nookast.designsystem.NookType.markedWeight(started || timeColor != null),
                 maxLines = 1,
             )
             EpisodeDownloadMark(downloaded, downloading, downloadProgress, 12.dp * textScale)
@@ -362,8 +369,8 @@ internal fun EpisodeMoreButton(menu: List<EpisodeMenuItem>, scale: Float) {
         val moreLabel = stringResource(R.string.episode_more_actions)
         Box(
             Modifier
-                // 48 dp tall: the smallest comfortable target (plan 5.5).
-                .size(width = 34.dp * scale, height = 48.dp * scale)
+                // 48 × 48 dp: the smallest comfortable target (plan 5.5, audit 3.6).
+                .size(48.dp * scale)
                 .clip(CircleShape)
                 .combinedClickable(role = Role.Button, onClick = { menuOpen = true })
                 .semantics { contentDescription = moreLabel },
@@ -380,24 +387,16 @@ internal fun EpisodeMoreButton(menu: List<EpisodeMenuItem>, scale: Float) {
 /** The menu of an episode row, from its "⋯" button or a long press. */
 @Composable
 internal fun EpisodeMenu(menu: List<EpisodeMenuItem>, expanded: Boolean, onDismiss: () -> Unit) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        modifier = Modifier.widthIn(min = 230.dp),
-        shape = RoundedCornerShape(14.dp),
-        containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
-    ) {
-        ru.e1173.nookast.designsystem.InterfaceScaled {
-            menu.forEach { item ->
-                DropdownMenuItem(
-                    text = { Text(item.label) },
-                    onClick = {
-                        onDismiss()
-                        item.onClick()
-                    },
-                )
-            }
+    ru.e1173.nookast.designsystem.NookMenu(expanded, onDismiss, minWidth = 230.dp) {
+        menu.forEach { item ->
+            ru.e1173.nookast.designsystem.NookMenuItem(
+                item.label,
+                onClick = {
+                    onDismiss()
+                    item.onClick()
+                },
+                destructive = item.destructive,
+            )
         }
     }
 }
@@ -446,7 +445,7 @@ internal fun standardEpisodeMenu(
         add(EpisodeMenuItem(stringResource(R.string.mark_played_action), onMarkPlayed))
     }
     if (downloaded && onDeleteDownload != null) {
-        add(EpisodeMenuItem(stringResource(R.string.delete_download), onDeleteDownload))
+        add(EpisodeMenuItem(stringResource(R.string.delete_download), onDeleteDownload, destructive = true))
     } else if (!downloaded) {
         add(EpisodeMenuItem(stringResource(R.string.download_episode), onDownload))
     }
@@ -475,21 +474,28 @@ internal fun EpisodeTile(
     onPlay: () -> Unit,
     menu: List<EpisodeMenuItem>,
     modifier: Modifier = Modifier,
+    /** Loaded in the player: its Play lights the tile (4.12). */
+    current: Boolean = false,
 ) {
     val colors = LocalNookastColors.current
     val scale = if (largeControls) 4f / 3f else 1f
     val textScale = if (largeControls) 1.12f else 1f
     val timing = episodeTiming(durationSeconds, listenedSeconds, completed)
-    val shape = RoundedCornerShape(18.dp * scale)
+    val tilePress = remember { MutableInteractionSource() }
+    val tileLight = ru.e1173.nookast.designsystem.rememberLightSource()
+    val shape = RoundedCornerShape(ru.e1173.nookast.designsystem.NookShapes.lRadius * scale)
     Column(
         modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(colors.surface.compositeOver(colors.background))
-            .border(1.dp, colors.divider.copy(alpha = 0.7f), shape)
+            .nookPressable(tilePress)
+            .nookCard(
+                radius = ru.e1173.nookast.designsystem.NookShapes.lRadius * scale,
+                light = tileLight.takeIf { current },
+                lightPlaying = playing,
+            )
             .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+                interactionSource = tilePress,
+                indication = androidx.compose.foundation.LocalIndication.current,
                 onClick = onOpen,
             )
             .padding(8.dp * scale),
@@ -509,7 +515,7 @@ internal fun EpisodeTile(
                 contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                 onClick = onPlay,
                 size = 40.dp * scale,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp).then(if (current) Modifier.lightEmitter(tileLight) else Modifier),
             )
         }
         Row(Modifier.padding(top = 8.dp * scale), verticalAlignment = Alignment.Top) {

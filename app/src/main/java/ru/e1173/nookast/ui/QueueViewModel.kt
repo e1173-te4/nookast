@@ -434,11 +434,14 @@ class QueueViewModel(
             } else {
                 unique
             }
+            // After the current one, several episodes keep their order: each lands after the one before.
+            val afterCurrent = if (position == QueueInsertionPosition.AFTER_CURRENT) withContext(Dispatchers.IO) { afterCurrentIndex() } else 0
             val committed = try {
                 withContext(Dispatchers.IO) {
-                    ordered.forEach { entry ->
+                    ordered.forEachIndexed { index, entry ->
                         val now = clock.millis()
                         val destination = when (position) {
+                            QueueInsertionPosition.AFTER_CURRENT -> afterCurrent + index
                             QueueInsertionPosition.FIRST -> 0
                             QueueInsertionPosition.LAST -> null
                         }
@@ -1149,6 +1152,12 @@ class QueueViewModel(
         }
     }
 
+    /** The queue index right after the episode playing now, or the top when it is not in the queue. */
+    private suspend fun afterCurrentIndex(): Int {
+        val current = database.offlineCacheDao().getCurrentPlaybackContext()?.pinePodsEpisodeId ?: return 0
+        return queueIndexAfter(_state.value.entries.map(QueueListEntry::episodeId), current)
+    }
+
     private fun enqueueEpisodeIfMissing(
         entry: QueueListEntry,
         position: QueueInsertionPosition,
@@ -1158,6 +1167,7 @@ class QueueViewModel(
         viewModelScope.launch {
             val now = clock.millis()
             val destination = when (position) {
+                QueueInsertionPosition.AFTER_CURRENT -> withContext(Dispatchers.IO) { afterCurrentIndex() }
                 QueueInsertionPosition.FIRST -> 0
                 QueueInsertionPosition.LAST -> null
             }
@@ -1412,3 +1422,7 @@ sealed interface FeedUrlChangeResult {
     /** The server refused, with its message (e.g. the feed is already another subscription). */
     data class Refused(val message: String) : FeedUrlChangeResult
 }
+
+/** Where «after current» puts a new episode: after [currentEpisodeId] in [queue], else at the top. */
+internal fun queueIndexAfter(queue: List<Int>, currentEpisodeId: Int): Int =
+    queue.indexOf(currentEpisodeId).let { if (it >= 0) it + 1 else 0 }

@@ -1,5 +1,8 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonSize
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import android.content.Intent
 import androidx.core.net.toUri
 import android.provider.Settings
@@ -116,14 +119,14 @@ internal fun UpdateSettingsPanel(touchTarget: Dp) {
             Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (state.available != null && state.progress == null) {
                     // The same offer as everywhere else: one consent, then download and install.
-                    Button(
+                    NookButton(size = NookButtonSize.L,
                         onClick = Updater::requestPrompt,
                         modifier = Modifier.fillMaxWidth().heightIn(min = touchTarget),
                     ) {
                         Text(stringResource(if (state.downloaded) R.string.update_install else R.string.update_download_install))
                     }
                 }
-                OutlinedButton(
+                NookButton(size = NookButtonSize.L, variant = NookButtonVariant.Outline,
                     onClick = { scope.launch { Updater.check(context, manual = true) } },
                     enabled = !state.checking && state.progress == null,
                     modifier = Modifier.fillMaxWidth().heightIn(min = touchTarget),
@@ -134,7 +137,7 @@ internal fun UpdateSettingsPanel(touchTarget: Dp) {
             }
             val notes = releaseNotes(state.availableBody)
             if (state.available != null && notes.isNotBlank()) {
-                TextButton(onClick = { showNotes = !showNotes }) { Text(stringResource(R.string.update_whats_new)) }
+                NookButton(variant = NookButtonVariant.Text, onClick = { showNotes = !showNotes }) { Text(stringResource(R.string.update_whats_new)) }
                 if (showNotes) {
                     Text(notes, style = MaterialTheme.typography.bodySmall)
                 }
@@ -175,7 +178,7 @@ private fun UpdateDownloadProgress(state: ru.e1173.nookast.update.UpdateState, m
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
-            if (cancel) TextButton(onClick = Updater::cancelDownload) { Text(stringResource(R.string.control_journal_cancel)) }
+            if (cancel) NookButton(variant = NookButtonVariant.Text, onClick = Updater::cancelDownload) { Text(stringResource(R.string.control_journal_cancel)) }
         }
     }
 }
@@ -470,7 +473,7 @@ private fun SaveToDownloads(state: ru.e1173.nookast.update.UpdateState, touchTar
             if (state.saveFailed) {
                 Text(stringResource(R.string.update_save_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
-            OutlinedButton(
+            NookButton(size = NookButtonSize.L, variant = NookButtonVariant.Outline,
                 onClick = { Updater.saveToDownloads(context) },
                 modifier = Modifier.fillMaxWidth().let { if (touchTarget != null) it.heightIn(min = touchTarget) else it },
             ) { Text(stringResource(R.string.update_save_to_downloads)) }

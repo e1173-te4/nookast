@@ -7,5 +7,7 @@ package ru.e1173.nookast.designcatalog
 object CatalogSceneRegistry {
     val scenes: List<CatalogScene> = listOf(
         NowPlayingControlPhoneLightPlaybackScene,
+        IconControlsScene,
+        BufferingScene,
     )
 }

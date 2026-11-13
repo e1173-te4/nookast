@@ -1,5 +1,7 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -30,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import ru.e1173.nookast.R
+import ru.e1173.nookast.designsystem.floatingShadow
 import ru.e1173.nookast.player.ControlReadEvents
 
 /**
@@ -63,10 +66,10 @@ internal fun ControlReadMessage(
             Modifier
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 520.dp)
-                .shadow(16.dp, RoundedCornerShape(22.dp), ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f))
-                .clip(RoundedCornerShape(22.dp))
+                .floatingShadow(ru.e1173.nookast.designsystem.NookShapes.xlRadius)
+                .clip(ru.e1173.nookast.designsystem.NookShapes.xl)
                 .background(colors.surface)
-                .border(1.dp, colors.surfaceOutline, RoundedCornerShape(22.dp))
+                .border(1.dp, colors.surfaceOutline, ru.e1173.nookast.designsystem.NookShapes.xl)
                 .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -80,7 +83,7 @@ internal fun ControlReadMessage(
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f, fill = false).padding(vertical = 8.dp),
             )
-            TextButton(
+            NookButton(variant = NookButtonVariant.Text,
                 onClick = {
                     onSeek(shown.targetMs)
                     ControlReadEvents.consume(shown.id)
@@ -88,8 +91,8 @@ internal fun ControlReadMessage(
             ) {
                 Text(
                     stringResource(if (shown.jumped) R.string.control_read_go_back else R.string.control_read_go_there),
-                    color = colors.accent,
-                    fontWeight = FontWeight.SemiBold,
+                    color = colors.accentText,
+                    style = ru.e1173.nookast.designsystem.NookType.rowTitle,
                 )
             }
         }

@@ -1,5 +1,10 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.leavingTitle
+import ru.e1173.nookast.designsystem.trackLargeTitle
+import ru.e1173.nookast.designsystem.trackHeaderBar
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.focusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import ru.e1173.nookast.designsystem.nookElevation
 import ru.e1173.nookast.R
 import ru.e1173.nookast.data.remote.FeedPreview
 import ru.e1173.nookast.data.remote.FoundPodcast
@@ -90,6 +96,9 @@ internal fun FoundPodcastCard(
     val titlePx = with(LocalDensity.current) { 300.dp.toPx() }
     val scrolled by remember { derivedStateOf { scroll.value > 0 } }
     val showTitle by remember(titlePx) { derivedStateOf { scroll.value > titlePx } }
+    // The bar's title follows the large one going under it (design audit 4.6).
+    val titleTracker = ru.e1173.nookast.designsystem.rememberHeaderTitleTracker()
+    val density = LocalDensity.current
     GlassHeaderScreen(
         headerHeight = 52.dp,
         scrolled = scrolled,
@@ -101,6 +110,8 @@ internal fun FoundPodcastCard(
                 showTitle = showTitle,
                 menu = emptyList(),
                 onBack = onBack,
+                titleProgress = { titleTracker.progress(density) },
+                modifier = Modifier.trackHeaderBar(titleTracker),
             )
         },
     ) { topPadding ->
@@ -119,11 +130,11 @@ internal fun FoundPodcastCard(
                 wide -> 240.dp
                 else -> 216.dp
             }
-            val coverShape = RoundedCornerShape(14.dp * ARTWORK_CORNER_SCALE)
+            val coverShape = RoundedCornerShape(ru.e1173.nookast.designsystem.NookShapes.mRadius * ARTWORK_CORNER_SCALE)
             Box(
                 Modifier
                     .padding(top = 12.dp)
-                    .shadow(24.dp, coverShape, ambientColor = Color.Black.copy(alpha = 0.35f), spotColor = Color.Black.copy(alpha = 0.45f))
+                    .then(Modifier.nookElevation(ru.e1173.nookast.designsystem.NookElevation.Level2, ru.e1173.nookast.designsystem.NookShapes.mRadius * ARTWORK_CORNER_SCALE))
                     .size(coverSize),
             ) {
                 Artwork(
@@ -140,8 +151,7 @@ internal fun FoundPodcastCard(
             preview?.episodeCount?.takeIf { it > 0 }?.let { count ->
                 Text(
                     pluralStringResource(R.plurals.podcast_total_episodes, count, count).uppercase(),
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp * scale, letterSpacing = 0.06.em),
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.label.scaled(scale).copy(letterSpacing = 0.06.em),
                     color = colors.textSecondary,
                     textAlign = TextAlign.Center,
                 )
@@ -149,17 +159,18 @@ internal fun FoundPodcastCard(
             }
             Text(
                 podcast.title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp * scale, lineHeight = 30.sp * scale, letterSpacing = (-0.01).em),
-                fontWeight = FontWeight.Bold,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle.scaled(scale).copy(letterSpacing = (-0.01).em),
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { heading() },
+                modifier = Modifier
+                    .trackLargeTitle(titleTracker)
+                    .leavingTitle { titleTracker.progress(density) }
+                    .semantics { heading() },
             )
             if (author.isNotBlank()) {
                 Text(
                     author,
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp * scale),
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle.scaled(scale),
                     color = colors.textSecondary,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -177,14 +188,14 @@ internal fun FoundPodcastCard(
             note?.let {
                 Text(
                     it,
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp * scale),
+                    style = ru.e1173.nookast.designsystem.NookType.bodySmall.scaled(scale),
                     color = if (status == FoundPodcastStatus.FAILED) MaterialTheme.colorScheme.error else colors.textSecondary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             }
             Spacer(Modifier.height(22.dp))
-            val bodyStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp * scale, lineHeight = 24.sp * scale)
+            val bodyStyle = ru.e1173.nookast.designsystem.NookType.body.scaled(scale)
             if (remember(description) { normalizeDescriptionText(description).any(Char::isLetterOrDigit) }) {
                 Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
                     NookExpandable(
@@ -220,7 +231,7 @@ internal fun FoundPodcastCard(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                     )
                 }
-                else -> CircularProgressIndicator(Modifier.padding(top = 8.dp).size(24.dp), strokeWidth = 2.dp, color = colors.accent)
+                else -> CircularProgressIndicator(Modifier.padding(top = 8.dp).size(24.dp), strokeWidth = 2.dp, color = colors.accentText)
             }
         }
     }
@@ -237,8 +248,11 @@ private fun SubscribeCapsule(
     onOpenPodcast: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalNookastColors.current
     val enabled = status == FoundPodcastStatus.NEW || status == FoundPodcastStatus.FAILED || status == FoundPodcastStatus.IN_LIBRARY
+    ru.e1173.nookast.designsystem.HapticOutcome(
+        pending = status == FoundPodcastStatus.ADDING,
+        success = status == FoundPodcastStatus.ADDED || status == FoundPodcastStatus.IN_LIBRARY,
+    )
     val label = stringResource(
         when (status) {
             FoundPodcastStatus.NEW, FoundPodcastStatus.FAILED -> R.string.search_preview_subscribe
@@ -247,18 +261,16 @@ private fun SubscribeCapsule(
             FoundPodcastStatus.IN_LIBRARY -> R.string.search_preview_open
         },
     )
-    Row(
-        modifier
-            .heightIn(min = 50.dp * scale)
-            .clip(CircleShape)
-            .background(if (enabled) colors.accent else colors.tintContainer)
-            .focusRing(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = if (status == FoundPodcastStatus.IN_LIBRARY) onOpenPodcast else onAdd)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    ru.e1173.nookast.designsystem.NookButton(
+        onClick = if (status == FoundPodcastStatus.IN_LIBRARY) onOpenPodcast else onAdd,
+        modifier = modifier,
+        variant = if (enabled) ru.e1173.nookast.designsystem.NookButtonVariant.Primary else ru.e1173.nookast.designsystem.NookButtonVariant.Tonal,
+        size = ru.e1173.nookast.designsystem.NookButtonSize.L,
+        enabled = enabled,
+        scale = scale,
+        dimWhenDisabled = false,
     ) {
-        val tint = if (enabled) colors.onAccent else colors.accent
+        val tint = androidx.compose.material3.LocalContentColor.current
         when (status) {
             FoundPodcastStatus.ADDING -> CircularProgressIndicator(Modifier.size(18.dp * scale), strokeWidth = 2.dp, color = tint)
             FoundPodcastStatus.ADDED -> Icon(NookIcons.Check, null, tint = tint, modifier = Modifier.size(18.dp * scale))
@@ -268,8 +280,7 @@ private fun SubscribeCapsule(
         Spacer(Modifier.width(8.dp))
         Text(
             label,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp * scale),
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.buttonLarge.scaled(scale),
             color = tint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -326,10 +337,10 @@ private fun FeedInformation(preview: FeedPreview?, author: String, feedUrl: Stri
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(label, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale), color = colors.textSecondary)
+                Text(label, style = ru.e1173.nookast.designsystem.NookType.body.scaled(scale), color = colors.textSecondary)
                 Text(
                     value,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale),
+                    style = ru.e1173.nookast.designsystem.NookType.body.scaled(scale),
                     color = if (index == rows.lastIndex && feedUrl.isNotBlank()) colors.accent else colors.textPrimary,
                     textAlign = TextAlign.End,
                     maxLines = 1,
@@ -355,12 +366,11 @@ private fun LatestEpisodes(preview: FeedPreview, podcast: FoundPodcast, scale: F
                     episode.durationSeconds?.let { minutesLabel((it / 60).coerceAtLeast(1)) },
                 ).joinToString(" • ")
                 if (meta.isNotEmpty()) {
-                    Text(meta.uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp * scale), color = colors.textSecondary, maxLines = 1)
+                    Text(meta.uppercase(), style = ru.e1173.nookast.designsystem.NookType.meta.scaled(scale), color = colors.textSecondary, maxLines = 1)
                 }
                 Text(
                     cleanEpisodeTitle(episode.title.ifBlank { podcast.title }),
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale, lineHeight = 20.sp * scale),
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.rowTitle.scaled(scale),
                     color = colors.textPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

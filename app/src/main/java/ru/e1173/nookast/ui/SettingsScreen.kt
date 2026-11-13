@@ -2,6 +2,14 @@
 
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.themeRevealSource
+import ru.e1173.nookast.designsystem.NookSlider
+import ru.e1173.nookast.designsystem.NookSwitch
+import ru.e1173.nookast.designsystem.nookCard
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonSize
+import ru.e1173.nookast.designsystem.NookButtonVariant
+import ru.e1173.nookast.designsystem.focusRing
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,7 +45,6 @@ import androidx.compose.ui.semantics.semantics
 import ru.e1173.nookast.designsystem.NookIcons
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -211,8 +218,7 @@ internal fun SettingsScreen(
                 Box(Modifier.fillMaxWidth().heightIn(min = 52.dp), contentAlignment = Alignment.CenterStart) {
                     Text(
                         text = stringResource(activeSection.titleResource),
-                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 32.sp),
-                        fontWeight = FontWeight.Bold,
+                        style = ru.e1173.nookast.designsystem.NookType.heroTitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -299,11 +305,10 @@ private fun PhoneSettingsSectionList(
         }
         if (showTitle) Text(
             text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp, lineHeight = 38.sp),
-            fontWeight = FontWeight.Bold,
+            style = ru.e1173.nookast.designsystem.NookType.display,
             modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 18.dp),
         )
-        val shape = RoundedCornerShape(20.dp)
+        val shape = ru.e1173.nookast.designsystem.NookShapes.xl
         Column(
             Modifier
                 .fillMaxWidth()
@@ -350,8 +355,7 @@ private fun SettingsSidebar(
             SettingsRoundBack(onBack = onBack, touchTarget = touchTarget)
             Text(
                 text = stringResource(R.string.settings_title),
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp, lineHeight = 28.sp),
-                fontWeight = FontWeight.Bold,
+                style = ru.e1173.nookast.designsystem.NookType.sectionTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -363,7 +367,7 @@ private fun SettingsSidebar(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.coerceAtLeast(52.dp))
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.m)
                     .background(if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else Color.Transparent)
                     .clickable { onSectionSelected(section) }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -373,9 +377,9 @@ private fun SettingsSidebar(
                 SettingsSectionGlyph(section, glyphSize = 30.dp, solid = true)
                 Text(
                     text = stringResource(section.titleResource),
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 21.sp),
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
+                    fontWeight = ru.e1173.nookast.designsystem.NookType.selectedWeight(active),
+                    color = if (active) ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText else MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -396,9 +400,9 @@ private fun SettingsSectionRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = touchTarget.coerceAtLeast(64.dp))
-            .clip(RoundedCornerShape(12.dp))
+            .clip(ru.e1173.nookast.designsystem.NookShapes.m)
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else Color.Transparent)
-            .focusRing(RoundedCornerShape(12.dp))
+            .focusRing(ru.e1173.nookast.designsystem.NookShapes.m)
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -408,13 +412,12 @@ private fun SettingsSectionRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(section.titleResource),
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                style = ru.e1173.nookast.designsystem.NookType.barTitle,
+                color = if (selected) ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText else MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = stringResource(section.descriptionResource),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 17.sp),
+                style = ru.e1173.nookast.designsystem.NookType.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -432,25 +435,7 @@ private fun SettingsSectionRow(
 
 @Composable
 private fun SettingsRoundBack(onBack: () -> Unit, touchTarget: Dp) {
-    val label = stringResource(R.string.back)
-    Box(
-        modifier = Modifier
-            .size(touchTarget.coerceAtLeast(48.dp))
-            .clip(CircleShape)
-            .clickable(onClick = onBack)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            Modifier
-                .size(40.dp)
-                .floatingDisc()
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            SettingsBackArrow(Modifier.size(18.dp))
-        }
-    }
+    ru.e1173.nookast.designsystem.NookHeaderDisc(ru.e1173.nookast.designsystem.NookIcons.ChevronLeft, stringResource(R.string.back), onBack)
 }
 
 /** A section screen's bar: round back button and the section name centred, 17/600 like iOS. */
@@ -469,33 +454,10 @@ private fun SettingsHeader(
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.barTitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 64.dp),
-        )
-    }
-}
-
-@Composable
-private fun SettingsBackArrow(modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.primary
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.12f
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.66f, size.height * 0.16f),
-            end = Offset(size.width * 0.30f, size.height * 0.50f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.30f, size.height * 0.50f),
-            end = Offset(size.width * 0.66f, size.height * 0.84f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
         )
     }
 }
@@ -529,12 +491,7 @@ private fun SettingsSectionContent(
         if (showHeading) {
             Text(
                 text = stringResource(section.titleResource),
-                style = if (largeControls) {
-                    MaterialTheme.typography.headlineLarge
-                } else {
-                    MaterialTheme.typography.headlineMedium
-                },
-                fontWeight = FontWeight.Bold,
+                style = ru.e1173.nookast.designsystem.NookType.display,
             )
         }
         Text(
@@ -602,6 +559,13 @@ private fun SettingsSectionContent(
 @Composable
 private fun AboutSettingsContent(serverUrl: String) {
     val configuration = LocalConfiguration.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val serverVersion by androidx.compose.runtime.produceState("—") {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            ru.e1173.nookast.data.local.SyncDatabase.open(context).syncV8Dao().serverSettings()?.serverVersion
+                ?.trim()?.removePrefix("v")?.takeIf(String::isNotBlank)
+        } ?: "—"
+    }
     val rows = listOf(
         R.string.about_delivery to ru.e1173.nookast.BuildConfig.DELIVERY,
         R.string.about_version to ru.e1173.nookast.BuildConfig.VERSION_NAME,
@@ -625,15 +589,17 @@ private fun AboutSettingsContent(serverUrl: String) {
             configuration.densityDpi,
         ),
         R.string.about_server to (runCatching { serverUrl.toUri().host }.getOrNull() ?: "—"),
+        // The version the sync last read from the server (user, 11.11.2026).
+        R.string.about_server_version to serverVersion,
     )
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             // The launcher icon's two layers; painterResource cannot read an adaptive icon.
             Box(
                 Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFF4F337D), Color(0xFF1F0838)))),
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.m)
+                    .background(Brush.verticalGradient(ru.e1173.nookast.designsystem.NookFixedColors.LauncherGradient)),
                 contentAlignment = Alignment.Center,
             ) {
                 androidx.compose.foundation.Image(
@@ -645,8 +611,7 @@ private fun AboutSettingsContent(serverUrl: String) {
             Column(Modifier.weight(1f)) {
                 Text(
                     stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = ru.e1173.nookast.designsystem.NookType.sectionTitle,
                 )
                 Text(
                     stringResource(R.string.about_tagline),
@@ -671,8 +636,7 @@ private fun AboutSettingsContent(serverUrl: String) {
                 )
                 Text(
                     value,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
+                    style = ru.e1173.nookast.designsystem.NookType.body,
                     textAlign = TextAlign.End,
                     modifier = Modifier.weight(1.4f),
                 )
@@ -703,7 +667,7 @@ private fun PlayerSettingsContent(
     val playerSettings by androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>().settings.collectAsStateWithLifecycle()
     SettingsGroupLabel(R.string.settings_seek_intervals)
     if (wideLayout) {
-        SettingsPanel(decorated = true) {
+        SettingsPanel {
             SeekSettingBody(
                 titleResource = R.string.settings_seek_back_title,
                 descriptionResource = R.string.settings_seek_back_description,
@@ -760,6 +724,7 @@ private fun PlayerSettingsContent(
                 selected = playerSettings.manualQueuePosition,
                 onSelected = onManualQueuePositionChanged,
                 wideLayout = true,
+                afterCurrent = true,
             )
         }
     } else {
@@ -775,6 +740,7 @@ private fun PlayerSettingsContent(
             description = stringResource(R.string.settings_queue_manual_description),
             selected = playerSettings.manualQueuePosition,
             onSelected = onManualQueuePositionChanged,
+            afterCurrent = true,
         )
     }
 
@@ -843,7 +809,7 @@ private fun OfflineSettingsPanel(
     modifier: Modifier = Modifier,
 ) {
     val playerSettings by androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>().settings.collectAsStateWithLifecycle()
-    SettingsPanel(modifier = modifier, decorated = true) {
+    SettingsPanel(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -852,8 +818,7 @@ private fun OfflineSettingsPanel(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.download_on_playback),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
                 )
                 Text(
                     text = stringResource(R.string.download_on_playback_help),
@@ -862,7 +827,7 @@ private fun OfflineSettingsPanel(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            Switch(
+            NookSwitch(
                 checked = playerSettings.downloadWholeEpisodeOnPlayback,
                 onCheckedChange = onDownloadWholeEpisodeChanged,
             )
@@ -879,8 +844,7 @@ private fun OfflineSettingsPanel(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.settings_ahead_cache_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
                 )
                 Text(
                     text = stringResource(R.string.settings_ahead_cache_description),
@@ -894,13 +858,12 @@ private fun OfflineSettingsPanel(
                     R.string.settings_megabytes_value,
                     playerSettings.aheadCacheMegabytes,
                 ),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle,
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                 maxLines = 1,
             )
         }
-        Slider(
+        NookSlider(
             value = playerSettings.aheadCacheMegabytes.toFloat(),
             onValueChange = { value ->
                 onAheadCacheChanged(
@@ -908,15 +871,6 @@ private fun OfflineSettingsPanel(
                 )
             },
             valueRange = PlaybackPreferences.MIN_AHEAD_CACHE_MB.toFloat()..PlaybackPreferences.MAX_AHEAD_CACHE_MB.toFloat(),
-            thumb = {
-                Box(
-                    Modifier.size(14.dp).background(
-                        MaterialTheme.colorScheme.primary,
-                        CircleShape,
-                    ),
-                )
-            },
-            track = { ApprovedSliderTrack(it) },
             modifier = Modifier.padding(top = 8.dp),
         )
         Row(
@@ -951,10 +905,9 @@ private fun OfflineSettingsPanel(
             modifier = Modifier.padding(top = 16.dp),
         )
         // Only a disk cache left by an older version can be cleared; streams now live in RAM.
-        if (queueState.aheadCacheBytes > 0L || queueState.aheadCacheClearPending) OutlinedButton(
+        if (queueState.aheadCacheBytes > 0L || queueState.aheadCacheClearPending) NookButton(size = NookButtonSize.L, variant = NookButtonVariant.Outline,
             onClick = onClearAheadCache,
             enabled = !queueState.aheadCacheClearPending,
-            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = touchTarget.compactRow())
@@ -983,7 +936,7 @@ private fun QueueSwipeSetting(
     modifier: Modifier = Modifier,
 ) {
     SettingsPanel(modifier = modifier) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(title, style = ru.e1173.nookast.designsystem.NookType.barTitle)
         Text(
             description,
             style = MaterialTheme.typography.bodySmall,
@@ -1011,6 +964,7 @@ private fun QueueInsertionSetting(
     description: String,
     selected: QueueInsertionPosition,
     onSelected: (QueueInsertionPosition) -> Unit,
+    afterCurrent: Boolean = false,
 ) {
     SettingsPanel {
         QueueInsertionSettingBody(
@@ -1019,6 +973,7 @@ private fun QueueInsertionSetting(
             selected = selected,
             onSelected = onSelected,
             wideLayout = false,
+            afterCurrent = afterCurrent,
         )
     }
 }
@@ -1030,6 +985,7 @@ private fun QueueInsertionSettingBody(
     selected: QueueInsertionPosition,
     onSelected: (QueueInsertionPosition) -> Unit,
     wideLayout: Boolean,
+    afterCurrent: Boolean = false,
 ) {
     if (wideLayout) {
         Row(
@@ -1040,8 +996,7 @@ private fun QueueInsertionSettingBody(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
                 )
                 Text(
                     text = description,
@@ -1053,14 +1008,14 @@ private fun QueueInsertionSettingBody(
             QueuePositionChoices(
                 selected = selected,
                 onSelected = onSelected,
-                modifier = Modifier.width(250.dp),
+                afterCurrent = afterCurrent,
+                modifier = Modifier.width(if (afterCurrent) 380.dp else 250.dp),
             )
         }
     } else {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.barTitle,
         )
         Text(
             text = description,
@@ -1068,7 +1023,7 @@ private fun QueueInsertionSettingBody(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 3.dp, bottom = 10.dp),
         )
-        QueuePositionChoices(selected = selected, onSelected = onSelected)
+        QueuePositionChoices(selected = selected, onSelected = onSelected, afterCurrent = afterCurrent)
     }
 }
 
@@ -1077,11 +1032,20 @@ private fun QueuePositionChoices(
     selected: QueueInsertionPosition,
     onSelected: (QueueInsertionPosition) -> Unit,
     modifier: Modifier = Modifier,
+    afterCurrent: Boolean = false,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (afterCurrent) {
+            QueuePositionChip(
+                title = stringResource(R.string.settings_queue_after_current),
+                selected = selected == QueueInsertionPosition.AFTER_CURRENT,
+                onClick = { onSelected(QueueInsertionPosition.AFTER_CURRENT) },
+                modifier = Modifier.weight(1f),
+            )
+        }
         QueuePositionChip(
             title = stringResource(R.string.settings_queue_first),
             selected = selected == QueueInsertionPosition.FIRST,
@@ -1107,7 +1071,7 @@ private fun QueuePositionChip(
     Surface(
         onClick = onClick,
         modifier = modifier.heightIn(min = 44.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = ru.e1173.nookast.designsystem.NookShapes.m,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -1122,9 +1086,9 @@ private fun QueuePositionChip(
         Box(contentAlignment = Alignment.Center) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                color = if (selected) MaterialTheme.colorScheme.primary
+                style = ru.e1173.nookast.designsystem.NookType.rowTitle,
+                fontWeight = ru.e1173.nookast.designsystem.NookType.selectedWeight(selected),
+                color = if (selected) ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText
                 else MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -1163,8 +1127,7 @@ private fun SeekSettingBody(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(titleResource),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
                 )
                 Text(
                     text = stringResource(descriptionResource),
@@ -1179,25 +1142,15 @@ private fun SeekSettingBody(
                     seconds,
                     seconds,
                 ),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle,
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                 maxLines = 1,
             )
         }
-        Slider(
+        NookSlider(
             value = seconds.toFloat(),
             onValueChange = { onSecondsChanged(it.roundToInt()) },
             valueRange = PlaybackPreferences.MIN_SEEK_SECONDS.toFloat()..PlaybackPreferences.MAX_SEEK_SECONDS.toFloat(),
-            thumb = {
-                Box(
-                    Modifier.size(14.dp).background(
-                        MaterialTheme.colorScheme.primary,
-                        CircleShape,
-                    ),
-                )
-            },
-            track = { ApprovedSliderTrack(it) },
             modifier = Modifier.padding(top = 8.dp),
         )
         Row(
@@ -1226,34 +1179,13 @@ private fun SeekSettingBody(
 }
 
 @Composable
-private fun ApprovedSliderTrack(state: SliderState) {
-    val span = state.valueRange.endInclusive - state.valueRange.start
-    val fraction = if (span <= 0f) 0f else {
-        ((state.value - state.valueRange.start) / span).coerceIn(0f, 1f)
-    }
-    Box(
-        Modifier.fillMaxWidth().height(4.dp).background(
-            MaterialTheme.colorScheme.primaryContainer,
-            CircleShape,
-        ),
-    ) {
-        Box(
-            Modifier.fillMaxWidth(fraction).fillMaxSize().background(
-                MaterialTheme.colorScheme.primary,
-                CircleShape,
-            ),
-        )
-    }
-}
-
-@Composable
 private fun AppearanceSettingsContent(
     themeMode: AppThemeMode,
     touchTarget: Dp,
     onThemeModeChanged: (AppThemeMode) -> Unit,
 ) {
     SettingsGroupLabel(R.string.theme_mode)
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         AppThemeMode.entries.forEachIndexed { index, mode ->
             ChoiceRow(
                 title = stringResource(mode.labelResource()),
@@ -1294,20 +1226,20 @@ private fun DashboardPlaylistsPanel(playlists: List<ru.e1173.nookast.data.remote
         titleResource = R.string.settings_dashboard_playlists,
         modifier = Modifier.padding(top = 14.dp),
     )
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         playlists.forEachIndexed { index, playlist ->
             val shown = playlist.playlistId !in display.hiddenDashboardPlaylists
             Row(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.compactRow())
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.m)
                     .clickable { preferences.setDashboardPlaylistHidden(playlist.playlistId, shown) }
                     .padding(horizontal = 4.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                PlaylistGlyph(playlist.iconName, MaterialTheme.colorScheme.primary, Modifier.size(22.dp))
+                PlaylistGlyph(playlist.iconName, ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText, Modifier.size(22.dp))
                 Text(playlist.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 androidx.compose.material3.Checkbox(
                     checked = shown,
@@ -1325,13 +1257,12 @@ private fun FeedCountPanel() {
     val preferences: ru.e1173.nookast.preferences.AppPreferencesViewModel = viewModel()
     val display by preferences.state.collectAsStateWithLifecycle()
     var count by remember(display.feedEpisodeCount) { mutableStateOf(display.feedEpisodeCount) }
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.feed_count_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ru.e1173.nookast.designsystem.NookType.barTitle,
                 )
                 Text(
                     text = stringResource(R.string.feed_count_description),
@@ -1342,20 +1273,15 @@ private fun FeedCountPanel() {
             }
             Text(
                 text = count.toString(),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle,
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
             )
         }
-        Slider(
+        NookSlider(
             value = count.toFloat(),
             onValueChange = { count = it.roundToInt() },
             onValueChangeFinished = { preferences.setFeedEpisodeCount(count) },
             valueRange = ru.e1173.nookast.data.remote.MIN_FEED_EPISODE_COUNT.toFloat()..ru.e1173.nookast.data.remote.MAX_FEED_EPISODE_COUNT.toFloat(),
-            thumb = {
-                Box(Modifier.size(14.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-            },
-            track = { ApprovedSliderTrack(it) },
             modifier = Modifier.padding(top = 8.dp),
         )
     }
@@ -1366,7 +1292,7 @@ private fun PalettePanel(touchTarget: Dp) {
     // DEC-017 trial (D2): the four approved colour themes; geometry and type are shared.
     val preferences: ru.e1173.nookast.preferences.AppPreferencesViewModel = viewModel()
     val display by preferences.state.collectAsStateWithLifecycle()
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         Text(
             text = stringResource(R.string.settings_color_palette_description),
             style = MaterialTheme.typography.bodyMedium,
@@ -1380,7 +1306,9 @@ private fun PalettePanel(touchTarget: Dp) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.compactRow())
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.l)
+                    // The new theme opens as a circle from this touch (design audit 5.7).
+                    .themeRevealSource()
                     .clickable { preferences.setPalette(palette) }
                     .padding(horizontal = 8.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1392,7 +1320,7 @@ private fun PalettePanel(touchTarget: Dp) {
                         .size(20.dp)
                         .border(
                             width = if (chosen) 6.dp else 2.dp,
-                            color = if (chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            color = if (chosen) ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText else MaterialTheme.colorScheme.outline,
                             shape = CircleShape,
                         ),
                 )
@@ -1422,7 +1350,7 @@ private fun PalettePanel(touchTarget: Dp) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = touchTarget.compactRow())
-                .clip(RoundedCornerShape(10.dp))
+                .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                 .clickable { preferences.setArtworkTint(!display.artworkTint) }
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1440,7 +1368,48 @@ private fun PalettePanel(touchTarget: Dp) {
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            Switch(checked = display.artworkTint, onCheckedChange = preferences::setArtworkTint)
+            NookSwitch(checked = display.artworkTint, onCheckedChange = preferences::setArtworkTint)
+        }
+        // The panel's own divider between the two switches (design audit, 12.11.2026).
+        HorizontalDivider(
+            modifier = Modifier.padding(vertical = 2.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+        // «Light follows the voice» (design audit 5.8, DEC-058): off by default.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = touchTarget.compactRow())
+                .clip(ru.e1173.nookast.designsystem.NookShapes.s)
+                .clickable { preferences.setVoiceLight(!display.voiceLight) }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_voice_light),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = stringResource(R.string.settings_voice_light_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                // Said here too: a switch that is on and does nothing must say so (audit of З, R7).
+                val soundContext = androidx.compose.ui.platform.LocalContext.current
+                val pausesShortened = remember(soundContext) { ru.e1173.nookast.player.SoundSettingsStore.open(soundContext).global().shortenPauses }
+                if (pausesShortened) {
+                    Text(
+                        text = stringResource(R.string.settings_voice_light_paused),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+            NookSwitch(checked = display.voiceLight, onCheckedChange = preferences::setVoiceLight)
         }
     }
 
@@ -1469,7 +1438,7 @@ private fun PalettePanel(touchTarget: Dp) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.compactRow())
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                     .clickable(enabled = placeKnown) { preferences.setSkyMood(mood, !enabled) }
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1480,7 +1449,7 @@ private fun PalettePanel(touchTarget: Dp) {
                     color = if (placeKnown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(checked = enabled && placeKnown, enabled = placeKnown, onCheckedChange = { preferences.setSkyMood(mood, it) })
+                NookSwitch(checked = enabled && placeKnown, enabled = placeKnown, onCheckedChange = { preferences.setSkyMood(mood, it) })
             }
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 2.dp),
@@ -1541,11 +1510,10 @@ private fun ServerSettingsContent(
     val syncStatus by syncAccount.status.collectAsStateWithLifecycle()
     val deadLetters by syncAccount.deadLetters.collectAsStateWithLifecycle()
     SettingsGroupLabel(R.string.settings_connection)
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         Text(
             text = serverUrl,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.sectionTitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1557,13 +1525,12 @@ private fun ServerSettingsContent(
         )
         Text(
             text = synchronizationText(queueState, pendingOperations),
-            style = MaterialTheme.typography.titleMedium,
+            style = ru.e1173.nookast.designsystem.NookType.barTitle,
             color = if (pendingOperations == 0 && queueState.syncError == null) {
-                Color(0xFF16864B)
+                ru.e1173.nookast.designsystem.NookFixedColors.SyncedGreen
             } else {
                 MaterialTheme.colorScheme.tertiary
             },
-            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(top = 18.dp),
         )
         Text(
@@ -1576,10 +1543,9 @@ private fun ServerSettingsContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 2.dp),
         )
-        Button(
+        NookButton(size = NookButtonSize.L,
             onClick = onRefresh,
             enabled = !queueState.isRefreshing,
-            shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = touchTarget.compactRow())
@@ -1589,7 +1555,7 @@ private fun ServerSettingsContent(
                 CircularProgressIndicator(
                     modifier = Modifier.size(22.dp),
                     strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = androidx.compose.material3.LocalContentColor.current,
                 )
             } else {
                 Text(stringResource(R.string.refresh))
@@ -1606,7 +1572,7 @@ private fun ServerSettingsContent(
             titleResource = R.string.sync_attention_title,
             modifier = Modifier.padding(top = 14.dp),
         )
-        SettingsPanel(decorated = true) {
+        SettingsPanel {
             SyncAttentionContent(
                 needsSignIn = syncStatus.needsSignIn,
                 deadLetters = deadLetters,
@@ -1622,7 +1588,7 @@ private fun ServerSettingsContent(
         titleResource = R.string.settings_status,
         modifier = Modifier.padding(top = 14.dp),
     )
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         StatusGrid(
             twoColumns = largeControls,
             items = listOf(
@@ -1647,7 +1613,7 @@ private fun ServerSettingsContent(
         titleResource = R.string.settings_actions,
         modifier = Modifier.padding(top = 14.dp),
     )
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         ActionRow(
             title = stringResource(R.string.extended_diagnostics),
             description = stringResource(R.string.settings_diagnostics_description),
@@ -1734,10 +1700,7 @@ private fun StatusTile(
 ) {
     Column(
         modifier = modifier
-            .background(
-                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
-                RoundedCornerShape(16.dp),
-            )
+            .nookCard()
             .padding(horizontal = 13.dp, vertical = 6.dp),
     ) {
         Text(
@@ -1747,8 +1710,7 @@ private fun StatusTile(
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium,
+            style = ru.e1173.nookast.designsystem.NookType.body,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
@@ -1771,8 +1733,7 @@ private fun StatusRow(
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium,
+            style = ru.e1173.nookast.designsystem.NookType.body,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
@@ -1795,8 +1756,7 @@ private fun ActionRow(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.barTitle,
         )
         Text(
             text = description,
@@ -1805,13 +1765,10 @@ private fun ActionRow(
             modifier = Modifier.padding(top = 4.dp, bottom = 10.dp),
         )
         if (destructive) {
-            OutlinedButton(
+            NookButton(size = NookButtonSize.L,
+                variant = NookButtonVariant.Destructive,
                 onClick = onClick,
                 enabled = enabled,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.compactRow()),
@@ -1819,10 +1776,9 @@ private fun ActionRow(
                 Text(actionLabel)
             }
         } else {
-            Button(
+            NookButton(size = NookButtonSize.L,
                 onClick = onClick,
                 enabled = enabled,
-                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = touchTarget.compactRow()),
@@ -1845,7 +1801,7 @@ private fun ChoiceRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = touchTarget.compactRow())
-            .clip(RoundedCornerShape(16.dp))
+            .clip(ru.e1173.nookast.designsystem.NookShapes.l)
             .background(
                 if (selected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
@@ -1874,8 +1830,8 @@ private fun ChoiceRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                style = ru.e1173.nookast.designsystem.NookType.barTitle,
+                fontWeight = ru.e1173.nookast.designsystem.NookType.selectedWeight(selected),
             )
             Text(
                 text = description,
@@ -1903,59 +1859,29 @@ internal fun SettingsGroupLabel(
 @Composable
 internal fun SettingsPanel(
     modifier: Modifier = Modifier,
-    decorated: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.54f), shape),
-    ) {
-        if (decorated) {
-            val primaryDecoration = MaterialTheme.colorScheme.primaryContainer
-            val tertiaryDecoration = MaterialTheme.colorScheme.tertiaryContainer
-            Canvas(Modifier.matchParentSize()) {
-                val radius = size.minDimension * 0.42f
-                drawCircle(
-                    color = primaryDecoration.copy(alpha = 0.72f),
-                    radius = radius,
-                    center = Offset(size.width + radius * 0.12f, -radius * 0.08f),
-                )
-                drawCircle(
-                    color = tertiaryDecoration.copy(alpha = 0.32f),
-                    radius = radius * 0.48f,
-                    center = Offset(size.width - radius * 0.10f, radius * 0.16f),
-                )
-            }
-        }
-        Column(modifier = Modifier.padding(13.dp)) { content() }
-    }
+    // The one card of the app (audit 3.2): settings moved off their tinted panels and decorations.
+    Column(modifier.fillMaxWidth().nookCard().padding(13.dp)) { content() }
 }
 
 /** iOS-style tile colours of the settings list: one hue per section, only the player in the accent. */
 @Composable
 private fun sectionTile(section: SettingsSection): Color = when (section) {
     SettingsSection.PLAYER -> MaterialTheme.colorScheme.primary
-    SettingsSection.APPEARANCE -> Color(0xFF5E5CE6)
-    SettingsSection.SERVER -> Color(0xFF0A84FF)
-    SettingsSection.DIAGNOSTICS -> Color(0xFF8E8E93)
-    SettingsSection.ABOUT -> Color(0xFFFF9F0A)
+    SettingsSection.APPEARANCE -> ru.e1173.nookast.designsystem.NookFixedColors.TileAppearance
+    SettingsSection.SERVER -> ru.e1173.nookast.designsystem.NookFixedColors.TileServer
+    SettingsSection.DIAGNOSTICS -> ru.e1173.nookast.designsystem.NookFixedColors.TileDiagnostics
+    SettingsSection.ABOUT -> ru.e1173.nookast.designsystem.NookFixedColors.TileAbout
 }
 
 @Composable
 private fun sectionAccent(section: SettingsSection): Color = when (section) {
     SettingsSection.PLAYER -> MaterialTheme.colorScheme.primary
     SettingsSection.APPEARANCE -> MaterialTheme.colorScheme.tertiary
-    SettingsSection.SERVER -> if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        Color(0xFF4ED39B)
-    } else {
-        Color(0xFF16875C)
-    }
+    SettingsSection.SERVER -> ru.e1173.nookast.designsystem.NookFixedColors.serverAccent(MaterialTheme.colorScheme.background.luminance() < 0.5f)
     SettingsSection.DIAGNOSTICS -> MaterialTheme.colorScheme.secondary
-    SettingsSection.ABOUT -> Color(0xFFE08600)
+    SettingsSection.ABOUT -> ru.e1173.nookast.designsystem.NookFixedColors.AboutAccent
 }
 
 @Composable
@@ -1972,48 +1898,19 @@ private fun SettingsSectionGlyph(
             .size(glyphSize)
             .background(
                 if (solid) tile else tile.copy(alpha = 0.13f),
-                RoundedCornerShape(if (solid) glyphSize * 0.27f else 12.dp),
+                RoundedCornerShape(if (solid) glyphSize * 0.27f else ru.e1173.nookast.designsystem.NookShapes.mRadius),
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(if (solid) glyphSize * 0.6f else 20.dp)) {
-            val stroke = 2.dp.toPx()
-            when (section) {
-                SettingsSection.PLAYER -> {
-                    drawCircle(accent, radius = size.minDimension * 0.43f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawLine(accent, Offset(size.width * 0.42f, size.height * 0.34f), Offset(size.width * 0.42f, size.height * 0.66f), stroke, StrokeCap.Round)
-                    drawLine(accent, Offset(size.width * 0.58f, size.height * 0.34f), Offset(size.width * 0.58f, size.height * 0.66f), stroke, StrokeCap.Round)
-                }
-                SettingsSection.APPEARANCE -> {
-                    drawCircle(accent, radius = size.minDimension * 0.22f)
-                    repeat(8) { index ->
-                        val angle = Math.toRadians((index * 45.0))
-                        val start = Offset((size.width / 2f + kotlin.math.cos(angle).toFloat() * size.width * 0.32f), (size.height / 2f + kotlin.math.sin(angle).toFloat() * size.height * 0.32f))
-                        val end = Offset((size.width / 2f + kotlin.math.cos(angle).toFloat() * size.width * 0.43f), (size.height / 2f + kotlin.math.sin(angle).toFloat() * size.height * 0.43f))
-                        drawLine(accent, start, end, stroke, StrokeCap.Round)
-                    }
-                }
-                SettingsSection.SERVER -> {
-                    drawCircle(accent, radius = size.minDimension * 0.11f, center = Offset(size.width / 2f, size.height * 0.76f))
-                    drawArc(accent, 205f, 130f, false, Offset(size.width * 0.18f, size.height * 0.18f), androidx.compose.ui.geometry.Size(size.width * 0.64f, size.height * 0.64f), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = StrokeCap.Round))
-                    drawArc(accent, 210f, 120f, false, Offset(size.width * 0.30f, size.height * 0.36f), androidx.compose.ui.geometry.Size(size.width * 0.40f, size.height * 0.40f), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = StrokeCap.Round))
-                }
-                SettingsSection.DIAGNOSTICS -> {
-                    // A pulse line: the journal records control signals over time.
-                    val y = size.height / 2f
-                    val points = listOf(0f to 0f, 0.28f to 0f, 0.40f to -0.32f, 0.54f to 0.34f, 0.66f to 0f, 1f to 0f)
-                    points.zipWithNext().forEach { (from, to) ->
-                        drawLine(accent, Offset(size.width * from.first, y + size.height * from.second), Offset(size.width * to.first, y + size.height * to.second), stroke, StrokeCap.Round)
-                    }
-                }
-                SettingsSection.ABOUT -> {
-                    // «i» in a ring.
-                    drawCircle(accent, radius = size.minDimension * 0.43f, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                    drawCircle(accent, radius = stroke * 0.75f, center = Offset(size.width / 2f, size.height * 0.31f))
-                    drawLine(accent, Offset(size.width / 2f, size.height * 0.46f), Offset(size.width / 2f, size.height * 0.70f), stroke, StrokeCap.Round)
-                }
-            }
+        // Section icons from NookIcons (design audit 3.7).
+        val icon = when (section) {
+            SettingsSection.PLAYER -> ru.e1173.nookast.designsystem.NookIcons.CirclePause
+            SettingsSection.APPEARANCE -> ru.e1173.nookast.designsystem.NookIcons.Sun
+            SettingsSection.SERVER -> ru.e1173.nookast.designsystem.NookIcons.Wifi
+            SettingsSection.DIAGNOSTICS -> ru.e1173.nookast.designsystem.NookIcons.Activity
+            SettingsSection.ABOUT -> ru.e1173.nookast.designsystem.NookIcons.Info
         }
+        androidx.compose.material3.Icon(icon, null, tint = accent, modifier = Modifier.size(if (solid) glyphSize * 0.6f else 20.dp))
     }
 }
 
@@ -2110,7 +2007,7 @@ private fun ServerAccountPanel(touchTarget: Dp) {
         titleResource = R.string.server_settings_title,
         modifier = Modifier.padding(top = 14.dp),
     )
-    SettingsPanel(decorated = true) {
+    SettingsPanel {
         val settings = state.settings
         if (settings == null) {
             Text(
@@ -2119,7 +2016,7 @@ private fun ServerAccountPanel(touchTarget: Dp) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (!state.loading) {
-                TextButton(onClick = model::load, modifier = Modifier.heightIn(min = touchTarget)) {
+                NookButton(variant = NookButtonVariant.Text, onClick = model::load, modifier = Modifier.heightIn(min = touchTarget)) {
                     Text(stringResource(R.string.refresh))
                 }
             }
@@ -2140,9 +2037,8 @@ private fun ServerAccountPanel(touchTarget: Dp) {
             )
             Text(
                 text = String.format(java.util.Locale.ROOT, "%.1f\u00d7", speed),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle,
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
@@ -2186,11 +2082,11 @@ private fun ServerAccountPanel(touchTarget: Dp) {
         Text(
             text = settings.timezone,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
+            color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
             modifier = Modifier.padding(top = 6.dp),
         )
         if (deviceZone != settings.timezone) {
-            TextButton(
+            NookButton(variant = NookButtonVariant.Text,
                 onClick = { model.setTimezone(deviceZone) },
                 modifier = Modifier.heightIn(min = touchTarget.compactRow()),
                 contentPadding = PaddingValues(0.dp),
@@ -2217,7 +2113,7 @@ private fun ServerAccountPanel(touchTarget: Dp) {
 
 @Composable
 private fun ServerSettingTitle(title: Int, description: Int?) {
-    Text(stringResource(title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(stringResource(title), style = ru.e1173.nookast.designsystem.NookType.barTitle)
     description?.let {
         Text(
             text = stringResource(it),
@@ -2261,9 +2157,8 @@ private fun TransferPanel(touchTarget: Dp) {
                         state.deferred > 0 -> stringResource(R.string.settings_transfer_ready_deferred, state.deferred)
                         else -> stringResource(R.string.settings_transfer_ready)
                     },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (pending > 0) MaterialTheme.colorScheme.tertiary else Color(0xFF16864B),
+                    style = ru.e1173.nookast.designsystem.NookType.rowTitle,
+                    color = if (pending > 0) MaterialTheme.colorScheme.tertiary else ru.e1173.nookast.designsystem.NookFixedColors.SyncedGreen,
                 )
             }
             state.message?.let { message ->
@@ -2285,16 +2180,14 @@ private fun TransferPanel(touchTarget: Dp) {
                 Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
+                NookButton(
                     onClick = { exportLauncher.launch("nookast-transfer.json") },
                     enabled = !state.busy && state.pending == 0,
-                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f).heightIn(min = touchTarget.compactRow()),
                 ) { Text(stringResource(R.string.settings_transfer_export)) }
-                OutlinedButton(
+                NookButton(variant = NookButtonVariant.Outline,
                     onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
                     enabled = !state.busy,
-                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.weight(1f).heightIn(min = touchTarget.compactRow()),
                 ) { Text(stringResource(R.string.settings_transfer_import)) }
             }
@@ -2398,7 +2291,7 @@ private fun SkyPlaceSettings(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(status, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                androidx.compose.material3.TextButton(onClick = { choose(display.skyPlaceMode) }, enabled = !locating) {
+                NookButton(variant = NookButtonVariant.Text, onClick = { choose(display.skyPlaceMode) }, enabled = !locating) {
                     Text(stringResource(R.string.settings_sky_place_detect))
                 }
             }

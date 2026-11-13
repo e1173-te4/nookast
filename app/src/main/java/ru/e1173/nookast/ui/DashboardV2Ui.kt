@@ -1,5 +1,9 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.nookSkeleton
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.nookCard
+import ru.e1173.nookast.designsystem.focusRing
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.alpha
@@ -83,8 +87,8 @@ import ru.e1173.nookast.data.remote.DashboardEpisode
 import ru.e1173.nookast.data.remote.DashboardPlaylist
 import ru.e1173.nookast.offline.LocalDownloadedEpisode
 
-private val DashboardSectionShape = RoundedCornerShape(18.dp)
-private val DashboardTileShape = RoundedCornerShape(14.dp)
+private val DashboardSectionShape = ru.e1173.nookast.designsystem.NookShapes.l
+private val DashboardTileShape = ru.e1173.nookast.designsystem.NookShapes.m
 
 private enum class DashboardProfile { PHONE, FOLD, JAECOO }
 
@@ -277,7 +281,7 @@ internal fun DashboardScreen(
         // then fade in at their final size (user, 29.10.2026: the screen jumped as they arrived).
         val shown by androidx.compose.animation.core.animateFloatAsState(
             if (state.dashboardLocalReady) 1f else 0f,
-            androidx.compose.animation.core.tween(180),
+            ru.e1173.nookast.designsystem.NookMotion.standard(),
             label = "dashboardShown",
         )
         Column(
@@ -333,7 +337,6 @@ private fun DashboardHeader(
     onOpenSearch: () -> Unit = {},
 ) {
     val colors = LocalNookastColors.current
-    val target = if (touchTarget < 48.dp) 48.dp else touchTarget
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = if (large) 12.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -350,9 +353,8 @@ private fun DashboardHeader(
         Column(Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = if (large) 40.sp else 32.sp, lineHeight = if (large) 46.sp else 38.sp),
+                style = ru.e1173.nookast.designsystem.NookType.display.scaled(if (large) 1.25f else 1f),
                 color = colors.textPrimary,
-                fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
             androidx.compose.animation.Crossfade(status, label = "dashboardStatus") { shown ->
@@ -367,7 +369,7 @@ private fun DashboardHeader(
                 } else {
                     Row(
                         Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(ru.e1173.nookast.designsystem.NookShapes.xs)
                             .clickable(enabled = !refreshing, role = Role.Button, onClick = onRefresh),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -375,7 +377,7 @@ private fun DashboardHeader(
                         if (shown == R.string.dashboard_status_refreshing) {
                             CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = colors.textSecondary)
                         } else {
-                            Box(Modifier.size(7.dp).background(if (failed) Color(0xFFED6575) else Color(0xFFE0A33A), CircleShape))
+                            Box(Modifier.size(7.dp).background(if (failed) ru.e1173.nookast.designsystem.NookFixedColors.alertCoral(false) else ru.e1173.nookast.designsystem.NookFixedColors.Amber, CircleShape))
                         }
                         Text(
                             stringResource(shown),
@@ -390,39 +392,21 @@ private fun DashboardHeader(
         }
         // Search and add (user, 1.11.2026): a round glass button beside Settings, as iOS puts the
         // toolbar actions of a large title together on its trailing side.
-        val searchLabel = stringResource(R.string.dashboard_search)
-        Box(
-            Modifier
-                .size(target)
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = onOpenSearch)
-                .semantics { contentDescription = searchLabel },
-            contentAlignment = Alignment.Center,
+        val disc = if (large) 50.dp else 38.dp
+        ru.e1173.nookast.designsystem.NookHeaderDisc(
+            ru.e1173.nookast.designsystem.NookIcons.Search,
+            stringResource(R.string.dashboard_search),
+            onOpenSearch,
+            discSize = disc,
+            iconSize = if (large) 24.dp else 18.dp,
+        )
+        ru.e1173.nookast.designsystem.NookHeaderDisc(
+            icon = null,
+            contentDescription = stringResource(R.string.settings_title),
+            onClick = onOpenSettings,
+            discSize = disc,
         ) {
-            Box(
-                Modifier.size(if (large) 52.dp else 42.dp).floatingDisc().background(colors.surface.compositeOver(colors.background), CircleShape)
-                    .border(1.dp, colors.divider, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(ru.e1173.nookast.designsystem.NookIcons.Search, null, tint = colors.textPrimary, modifier = Modifier.size(if (large) 26.dp else 20.dp))
-            }
-        }
-        val settingsLabel = stringResource(R.string.settings_title)
-        Box(
-            Modifier
-                .size(target)
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = onOpenSettings)
-                .semantics { contentDescription = settingsLabel },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.size(if (large) 52.dp else 42.dp).floatingDisc().background(colors.surface.compositeOver(colors.background), CircleShape)
-                    .border(1.dp, colors.divider, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                DashboardSettingsGlyph(Modifier.size(if (large) 28.dp else 22.dp))
-            }
+            DashboardSettingsGlyph(Modifier.size(if (large) 24.dp else 18.dp))
         }
     }
 }
@@ -438,7 +422,12 @@ private fun DashboardSmartPlaylists(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         DashboardSectionHeader(stringResource(R.string.dashboard_smart_playlists))
         when {
-            loading -> DashboardLoading()
+            // First load with nothing cached: placeholders of the tiles (design audit 5.4).
+            loading -> repeat(2) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    repeat(columns) { ru.e1173.nookast.designsystem.NookSkeletonBlock(if (large) 96.dp else 78.dp, Modifier.weight(1f)) }
+                }
+            }
             playlists.isEmpty() -> DashboardEmpty(R.string.dashboard_playlists_empty)
             // Every playlist is shown (user, 27.10.2026); Settings can hide some.
             else -> playlists.chunked(columns).forEach { row ->
@@ -461,13 +450,11 @@ private fun DashboardPlaylistCard(
     modifier: Modifier,
 ) {
     val colors = LocalNookastColors.current
-    val shape = RoundedCornerShape(18.dp)
+    val shape = ru.e1173.nookast.designsystem.NookShapes.l
     Row(
         modifier
-            .snowDusted(18.dp, seed = playlist.playlistId)
-            .clip(shape)
-            .background(colors.surface.compositeOver(colors.background))
-            .border(1.dp, colors.divider.copy(alpha = 0.7f), shape)
+            .snowDusted(ru.e1173.nookast.designsystem.NookShapes.lRadius, seed = playlist.playlistId)
+            .nookCard(radius = ru.e1173.nookast.designsystem.NookShapes.lRadius)
             .focusRing(shape)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -475,13 +462,13 @@ private fun DashboardPlaylistCard(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
-            Modifier.size(if (large) 48.dp else 38.dp).background(colors.accent.copy(alpha = 0.14f), RoundedCornerShape(12.dp)),
+            Modifier.size(if (large) 48.dp else 38.dp).background(colors.accent.copy(alpha = 0.14f), ru.e1173.nookast.designsystem.NookShapes.m),
             contentAlignment = Alignment.Center,
         ) {
             PlaylistGlyph(playlist.iconName, colors.accent, Modifier.size(if (large) 28.dp else 22.dp))
         }
-        val titleStyle = MaterialTheme.typography.titleSmall.copy(fontSize = if (large) 18.sp else 14.sp, lineHeight = if (large) 22.sp else 18.sp)
-        val countStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp)
+        val titleStyle = ru.e1173.nookast.designsystem.NookType.rowTitle.scaled(if (large) 1.24f else 1f)
+        val countStyle = ru.e1173.nookast.designsystem.NookType.bodySmall
         // Every tile is as tall as a two-line title plus the count, so the grid stays even
         // whatever the names are (user, 27.10.2026); shorter content is centred.
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
@@ -492,9 +479,8 @@ private fun DashboardPlaylistCard(
             Column {
                 Text(
                     playlist.name.ifBlank { stringResource(R.string.dashboard_unnamed_playlist) },
-                    style = titleStyle,
+                    style = ru.e1173.nookast.designsystem.NookType.rowTitle,
                     color = colors.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -524,21 +510,21 @@ private fun DashboardWeekCard(
 ) {
     val colors = LocalNookastColors.current
     val locale = LocalConfiguration.current.locales[0]
-    val shape = RoundedCornerShape(20.dp)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         DashboardSectionHeader(stringResource(R.string.dashboard_week_title))
         Column(
             Modifier
                 .fillMaxWidth()
-                .snowDusted(20.dp, seed = 7)
-                .clip(shape)
-                .background(colors.surface.compositeOver(colors.background))
-                .border(1.dp, colors.divider.copy(alpha = 0.7f), shape)
+                .snowDusted(ru.e1173.nookast.designsystem.NookShapes.lRadius, seed = 7)
+                .nookCard(radius = ru.e1173.nookast.designsystem.NookShapes.lRadius)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (loading && analytics.recentDays.isEmpty()) {
-                DashboardLoading()
+                // The week's placeholders: the total, the average and the bars (5.4).
+                Box(Modifier.fillMaxWidth(0.55f).height(40.dp).nookSkeleton())
+                Box(Modifier.fillMaxWidth(0.4f).height(16.dp).nookSkeleton())
+                ru.e1173.nookast.designsystem.NookSkeletonBlock(150.dp)
                 return@Column
             }
             // Only what the server knows, so phone and car agree (user, 29.10.2026); the bars are
@@ -546,11 +532,12 @@ private fun DashboardWeekCard(
             val days = analytics.recentDays
             val weekSeconds = days.sumOf { it.listenSeconds }.takeIf { days.isNotEmpty() }
                 ?: analytics.weeklyListenSeconds
+            val shownWeekSeconds by androidx.compose.animation.core.animateIntAsState(weekSeconds.toInt(), ru.e1173.nookast.designsystem.NookMotion.slow(), label = "weekTotal")
             Column {
                 Text(
-                    listeningTime(weekSeconds),
-                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = if (large) 36.sp else 30.sp),
-                    fontWeight = FontWeight.Bold,
+                    // Counts on from the previous total over Slow, in table figures (design audit 5.5).
+                    listeningTime(shownWeekSeconds.toLong()),
+                    style = ru.e1173.nookast.designsystem.NookType.display.scaled(if (large) 1.2f else 1f).copy(fontFeatureSettings = "tnum"),
                     color = colors.textPrimary,
                 )
                 Text(
@@ -573,7 +560,7 @@ private fun DashboardWeekCard(
                     caption = stringResource(R.string.dashboard_history_caption),
                 )
             }
-            HorizontalDivider(color = colors.divider.copy(alpha = 0.7f))
+            HorizontalDivider(color = colors.cardOutline)
             Row(Modifier.fillMaxWidth()) {
                 WeekFigure(analytics.weeklyCompletedEpisodes.toString(), stringResource(R.string.dashboard_completed_short), Modifier.weight(1f))
                 WeekFigure(analytics.currentStreakDays.toString(), stringResource(R.string.dashboard_streak_short), Modifier.weight(1f))
@@ -626,7 +613,7 @@ private fun WeekPodcastRow(name: String, seconds: Long, artworkUrl: String?, onC
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(ru.e1173.nookast.designsystem.NookShapes.m)
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -643,7 +630,7 @@ private fun WeekPodcastRow(name: String, seconds: Long, artworkUrl: String?, onC
         )
         Column(Modifier.weight(1f)) {
             Text(stringResource(R.string.dashboard_week_podcast), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
-            Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, style = ru.e1173.nookast.designsystem.NookType.rowTitle, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(listeningTime(seconds), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
         androidx.compose.material3.Icon(
@@ -692,12 +679,12 @@ private fun DashboardInsights(analytics: DashboardAnalytics, onOpenPodcast: (Int
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                     .then(if (podcastId != null) Modifier.clickable { onOpenPodcast(podcastId) } else Modifier)
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("•", style = MaterialTheme.typography.bodyMedium, color = colors.accent)
+                Text("•", style = MaterialTheme.typography.bodyMedium, color = colors.accentText)
                 Text(
                     text,
                     style = MaterialTheme.typography.bodyMedium,
@@ -714,7 +701,7 @@ private fun DashboardInsights(analytics: DashboardAnalytics, onOpenPodcast: (Int
 private fun WeekFigure(value: String, label: String, modifier: Modifier) {
     val colors = LocalNookastColors.current
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), fontWeight = FontWeight.Bold, color = colors.textPrimary)
+        Text(value, style = ru.e1173.nookast.designsystem.NookType.sectionTitle, color = colors.textPrimary)
         Text(label, style = MaterialTheme.typography.labelSmall, color = colors.textSecondary, maxLines = 1)
     }
 }
@@ -736,13 +723,17 @@ private fun DashboardWeekChart(
     // grow in when the card appears.
     var selected by remember { mutableIntStateOf(-1) }
     val grow = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(Unit) { grow.animateTo(1f, androidx.compose.animation.core.tween(700)) }
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Bars rise from zero left to right, 30 ms apart, each over Emphasized; once per visit (design audit 5.5).
+    val reducedMotion = ru.e1173.nookast.designsystem.rememberReducedMotion()
+    LaunchedEffect(Unit) {
+        if (reducedMotion) grow.snapTo(1f) else grow.animateTo(1f, androidx.compose.animation.core.tween(WEEK_GROW_MS, easing = androidx.compose.animation.core.LinearEasing))
+    }
+    val haptics = ru.e1173.nookast.designsystem.rememberNookHaptics()
     fun select(x: Float, width: Int, toggle: Boolean) {
         val index = (x / width * 7).toInt().coerceIn(0, 6)
         val next = if (toggle && index == selected) -1 else index
         if (next != selected && next >= 0) {
-            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            haptics.tick()
         }
         selected = next
     }
@@ -760,9 +751,9 @@ private fun DashboardWeekChart(
                     listeningTime((peak * 60).toLong())
                 },
                 modifier = Modifier.align(Alignment.TopEnd),
-                style = MaterialTheme.typography.labelSmall,
+                style = ru.e1173.nookast.designsystem.NookType.meta,
                 color = if (selected >= 0) colors.accent else colors.textSecondary,
-                fontWeight = if (selected >= 0) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = ru.e1173.nookast.designsystem.NookType.highlightWeight(selected >= 0),
             )
             Canvas(
                 Modifier
@@ -783,7 +774,9 @@ private fun DashboardWeekChart(
                     val left = slot * index + (slot - barWidth) / 2f
                     drawRoundRect(colors.track, Offset(left, 0f), androidx.compose.ui.geometry.Size(barWidth, size.height), radius)
                     if (value > 0f) {
-                        val h = (value / peak * size.height).coerceAtLeast(barWidth) * grow.value
+                        val elapsed = grow.value * WEEK_GROW_MS - index * WEEK_STAGGER_MS
+                        val rise = androidx.compose.animation.core.FastOutSlowInEasing.transform((elapsed / ru.e1173.nookast.designsystem.NookMotion.EMPHASIZED_MS).coerceIn(0f, 1f))
+                        val h = (value / peak * size.height).coerceAtLeast(barWidth) * rise
                         val strong = if (selected >= 0) index == selected else index == today
                         drawRoundRect(
                             if (strong) colors.accent else colors.accent.copy(alpha = 0.45f),
@@ -810,9 +803,9 @@ private fun DashboardWeekChart(
                 Text(
                     label,
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = ru.e1173.nookast.designsystem.NookType.meta,
                     color = if (index == (if (selected >= 0) selected else today)) colors.accent else colors.textSecondary,
-                    fontWeight = if (index == (if (selected >= 0) selected else today)) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = ru.e1173.nookast.designsystem.NookType.highlightWeight(index == (if (selected >= 0) selected else today)),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
@@ -892,20 +885,10 @@ private fun DashboardSectionHeader(
     actionExpanded: Boolean = false,
 ) {
     val colors = LocalNookastColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title,
-            modifier = Modifier.weight(1f, fill = false).sectionHeading(),
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp),
-            color = colors.textPrimary,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    ru.e1173.nookast.designsystem.NookSectionTitle(
+        title,
+        Modifier.padding(start = 4.dp),
+        trailing = if (action == null) null else ({
         // A small round chevron instead of «Показать все» / «Свернуть», which did not fit next to
         // a long title (user, 28.10.2026). The words stay as its accessibility label.
         action?.let { label ->
@@ -915,7 +898,6 @@ private fun DashboardSectionHeader(
             )
             Box(
                 Modifier
-                    .padding(start = 8.dp)
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(colors.accent.copy(alpha = 0.14f))
@@ -926,12 +908,13 @@ private fun DashboardSectionHeader(
                 androidx.compose.material3.Icon(
                     ru.e1173.nookast.designsystem.NookIcons.ChevronDown,
                     contentDescription = null,
-                    tint = colors.accent,
+                    tint = colors.accentText,
                     modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = turn },
                 )
             }
         }
-    }
+        }),
+    )
 }
 
 @Composable
@@ -951,51 +934,16 @@ private fun DashboardMessage(text: String) {
 }
 
 @Composable
-private fun DashboardLoading() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(19.dp),
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 2.dp,
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(
-            stringResource(R.string.dashboard_loading),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun DashboardEmpty(resource: Int) {
-    Text(
-        stringResource(resource),
-        modifier = Modifier.padding(start = 4.dp),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
+    // Home's sections: the compact empty state, without the drawing (design audit 5.6).
+    ru.e1173.nookast.designsystem.NookEmptyState(stringResource(resource), Modifier.padding(start = 4.dp), compact = true)
 }
 
 @Composable
 private fun DashboardSettingsGlyph(modifier: Modifier) {
-    val color = MaterialTheme.colorScheme.onSurface
-    Canvas(modifier) {
-        val stroke = 1.8.dp.toPx()
-        val center = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(color, size.minDimension * 0.17f, center, style = Stroke(stroke))
-        drawCircle(color, size.minDimension * 0.34f, center, style = Stroke(stroke))
-        repeat(8) { tooth ->
-            val angle = Math.toRadians(tooth * 45.0)
-            drawLine(
-                color,
-                Offset(center.x + cos(angle).toFloat() * size.minDimension * 0.37f, center.y + sin(angle).toFloat() * size.minDimension * 0.37f),
-                Offset(center.x + cos(angle).toFloat() * size.minDimension * 0.47f, center.y + sin(angle).toFloat() * size.minDimension * 0.47f),
-                stroke,
-                StrokeCap.Round,
-            )
-        }
-    }
+    val color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Settings, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -1067,3 +1015,6 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L -> String.format(Locale.getDefault(), "%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
+
+private const val WEEK_STAGGER_MS = 30f
+private const val WEEK_GROW_MS = ru.e1173.nookast.designsystem.NookMotion.EMPHASIZED_MS + 6 * 30

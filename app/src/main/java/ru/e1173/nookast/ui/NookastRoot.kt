@@ -1,5 +1,12 @@
 package ru.e1173.nookast.ui
 
+import kotlinx.coroutines.flow.collectLatest
+import androidx.lifecycle.repeatOnLifecycle
+import ru.e1173.nookast.designsystem.playerDismissLayer
+import ru.e1173.nookast.designsystem.NookTextField
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonSize
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -101,9 +108,6 @@ private enum class ServerProtocol(
     HTTPS("https", "HTTPS"),
     HTTP("http", "HTTP"),
 }
-
-private val ConnectionPanelShape = RoundedCornerShape(24.dp)
-private val ConnectionFieldShape = RoundedCornerShape(14.dp)
 
 @Composable
 fun NookastRoot(
@@ -369,6 +373,9 @@ fun NookastRoot(
             modifier = Modifier.fillMaxSize().then(ru.e1173.nookast.designsystem.skyOverlay()),
             color = rootBackground,
         ) {
+            // The playing cover flies between the mini-player and the player (design audit 4.1).
+            androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize()) {
+            val coverScope = this
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
@@ -434,9 +441,15 @@ fun NookastRoot(
                 val miniBarShown = currentEpisodeId != null ||
                     // The Up Next tab is the queue itself.
                     queueState.entries.isNotEmpty() && selectedDestination != AppDestination.QUEUE
-                val currentEntry = queueState.entries.firstOrNull {
-                    it.episodeId == currentEpisodeId
-                } ?: stagedNowPlayingEntry?.takeIf { it.episodeId == currentEpisodeId }
+                val queueEntry = queueState.entries.firstOrNull { it.episodeId == currentEpisodeId }
+                // The playing episode keeps its details after it leaves the queue: marked played near the end
+                // by the server's rule, it is still being listened to (user, 11.11.2026: its description and
+                // chapters vanished while the last minutes played).
+                var heldEntry by remember { mutableStateOf<ru.e1173.nookast.data.local.QueueListEntry?>(null) }
+                LaunchedEffect(queueEntry) { if (queueEntry != null) heldEntry = queueEntry }
+                val currentEntry = queueEntry
+                    ?: stagedNowPlayingEntry?.takeIf { it.episodeId == currentEpisodeId }
+                    ?: heldEntry?.takeIf { it.episodeId == currentEpisodeId }
                 // An episode picked in Up Next while another plays (user, 3.11.2026: usually one wants to look at
                 // it first): Now Playing shows it without stopping what plays, until its Play or a return.
                 var previewEntry by remember { mutableStateOf<ru.e1173.nookast.data.local.QueueListEntry?>(null) }
@@ -539,11 +552,14 @@ fun NookastRoot(
                 // Each route's frame (plan 5.1): wide screens keep side margins, Podcasts and Settings
                 // split into panes with their own insets, screens with a sticky header own the width.
                 val routeFrame: (Route) -> RouteFrame = { route ->
-                    val destination = route.destination(navigator.tab)
+                    // Search keeps one frame whichever tab opened it (independent review of audit 3).
+                    val destination = if (route is Route.Search) AppDestination.HOME else route.destination(navigator.tab)
                     val split = wide && route !is Route.Episode &&
                         destination in setOf(AppDestination.PODCASTS, AppDestination.SETTINGS)
                     val ownBar = route is Route.Episode || route is Route.Queue || route is Route.Search || route is Route.Playlist ||
-                        !wide && (route is Route.Settings || route is Route.Podcast)
+                        !wide && (route is Route.Settings || route is Route.Podcast) ||
+                        // Wide Podcasts draws its own status-bar glass over its background and light.
+                        split && destination == AppDestination.PODCASTS
                     RouteFrame(
                         lazy = split || route is Route.Playlist || route is Route.Episode || route is Route.Queue || route is Route.Search ||
                             destination in setOf(AppDestination.PODCASTS, AppDestination.FEED, AppDestination.SETTINGS),
@@ -585,6 +601,8 @@ fun NookastRoot(
                             onBack = { navigator.pop() },
                             onAdded = queueViewModel::refreshPodcastCatalog,
                             onOpenPodcast = { podcastId ->
+                                // Opened from the Podcasts header: Search leaves the stack, so Back does not reopen it.
+                                if (navigator.tab == AppDestination.PODCASTS && navigator.top is Route.Search) navigator.pop()
                                 navigator.showTab(AppDestination.PODCASTS)
                                 if (wide) navigator.replaceTop(Route.Podcast(podcastId)) else navigator.push(Route.Podcast(podcastId))
                                 queueViewModel.loadPodcastDetailsById(podcastId)
@@ -606,6 +624,7 @@ fun NookastRoot(
                             largeControls = largeControls,
                             onRefresh = queueViewModel::refresh,
                             onRefreshDashboard = queueViewModel::refreshDashboard,
+                            onPullDashboard = { queueViewModel.refreshDashboard(force = true) },
                             onRefreshFeed = listsViewModel::refreshFeed,
                             listsState = listsState,
                             onTogglePlayback = playbackViewModel::togglePlayPause,
@@ -737,12 +756,7 @@ fun NookastRoot(
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
                                 text = stringResource(R.string.app_name),
-                                style = if (largeControls) {
-                                    MaterialTheme.typography.displaySmall
-                                } else {
-                                    MaterialTheme.typography.headlineLarge
-                                },
-                                fontWeight = FontWeight.Bold,
+                                style = ru.e1173.nookast.designsystem.NookType.display,
                             )
                             Text(
                                 text = stringResource(R.string.app_tagline),
@@ -795,21 +809,46 @@ fun NookastRoot(
                 val topBarOwned = if (state.stage == LoginStage.CONNECTED) routeFrame(navigator.top).ownTopBar else ownTopBar
                 if (!topBarOwned) StatusBarGlass(hazeState)
                 // Back closes the player and the queue first; the tab's stack is NavDisplay's.
-                BackHandler(enabled = playerExpanded || upNextExpanded) {
-                    if (upNextExpanded) upNextExpanded = false else playerExpanded = false
+                // Pulling the player down and predictive back share one progress (design audit 4.2).
+                val dismissScope = androidx.compose.runtime.rememberCoroutineScope()
+                val playerDismiss = remember { ru.e1173.nookast.designsystem.PlayerDismissState(dismissScope) { playerExpanded = false } }
+                LaunchedEffect(playerExpanded) {
+                    // Back at rest after the exit has played from where the pull left it.
+                    if (!playerExpanded) kotlinx.coroutines.delay(PLAYER_EXIT_SETTLE_MS)
+                    playerDismiss.reset()
+                }
+                // NavDisplay re-registers its own back handler whenever the stack changes, which made it
+                // outrank these: on a podcast page Back popped the page under the open player (found in
+                // the playing-state check, 12.11.2026). Re-registering them with the stack keeps them last.
+                androidx.compose.runtime.key(navigator.tab, navigator.top) {
+                androidx.activity.compose.PredictiveBackHandler(enabled = playerExpanded && !upNextExpanded) { events ->
+                    try {
+                        events.collect { playerDismiss.followBack(it.progress) }
+                        playerExpanded = false
+                    } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                        playerDismiss.cancelBack()
+                        throw cancelled
+                    }
+                }
+                BackHandler(enabled = upNextExpanded) { upNextExpanded = false }
                 }
 
                 val showAppChrome = state.stage == LoginStage.CONNECTED &&
                     selectedDestination != AppDestination.SETTINGS &&
                     !playerExpanded && !upNextExpanded
-                if (showAppChrome) {
+                // The bar comes and goes as the mini-player does (design audit 4.7).
+                AnimatedVisibility(
+                    visible = showAppChrome,
+                    enter = fadeIn(ru.e1173.nookast.designsystem.NookMotion.standard()) + slideInVertically(ru.e1173.nookast.designsystem.NookMotion.emphasized()) { it / 3 },
+                    exit = fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast()) + slideOutVertically(ru.e1173.nookast.designsystem.NookMotion.standard()) { it / 3 },
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                ) {
                     AppNavigationBar(
                         selected = selectedDestination,
                         // A tab tap switches tabs; the shown tab again returns to its root, as on iOS
                         // (a smart playlist closes with Home, user 29.10.2026).
                         onSelected = navigator::selectTab,
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .appGlass(hazeState)
                             .heightIn(min = navigationBarHeight),
@@ -844,124 +883,156 @@ fun NookastRoot(
                         visible = playerExpanded && !upNextExpanded,
                         // Mini-player spec §4: grows up from the mini-player on a 0.82/380 spring and
                         // sinks back on 0.86/420 with a quick 120 ms fade.
-                        enter = fadeIn(tween(180)) +
+                        // The cover flies on its own (4.1); the rest appears 60 ms later.
+                        enter = fadeIn(ru.e1173.nookast.designsystem.NookMotion.standard(delayMs = 60)) +
                             scaleIn(
-                                spring(dampingRatio = 0.82f, stiffness = 380f),
+                                ru.e1173.nookast.designsystem.NookMotion.spatial(),
                                 initialScale = 0.92f,
                                 transformOrigin = TransformOrigin(0.5f, 1f),
                             ) +
-                            slideInVertically(spring(dampingRatio = 0.82f, stiffness = 380f)) { it / 6 },
-                        exit = fadeOut(tween(120)) +
+                            slideInVertically(ru.e1173.nookast.designsystem.NookMotion.spatial()) { it / 6 },
+                        exit = fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast()) +
                             scaleOut(
-                                spring(dampingRatio = 0.86f, stiffness = 420f),
+                                ru.e1173.nookast.designsystem.NookMotion.settle(),
                                 targetScale = 0.92f,
                                 transformOrigin = TransformOrigin(0.5f, 1f),
                             ) +
-                            slideOutVertically(spring(dampingRatio = 0.86f, stiffness = 420f)) { it / 6 },
-                        modifier = Modifier.fillMaxSize(),
+                            slideOutVertically(ru.e1173.nookast.designsystem.NookMotion.settle()) { it / 6 },
+                        modifier = Modifier.fillMaxSize().playerDismissLayer(playerDismiss),
                     ) {
-                        NowPlayingScreen(
-                            playbackState = shownState,
-                            queueState = queueState,
-                            currentEntry = previewEntry ?: currentEntry,
-                            podcastDetails = shownDetails,
-                            podcastDetailsLoading = shownDetailsLoading,
-                            playingElsewhere = playbackState.title.takeIf { previewEntry != null },
-                            onReturnToPlaying = { previewEntry = null },
-                            playingEpisodeId = playbackState.currentEpisodeId,
-                            wide = wide,
-                            largeControls = largeControls,
-                            initialTab = initialPlayerTab,
-                            onCollapse = { playerExpanded = false },
-                            onOpenUpNext = { upNextExpanded = true },
-                            onOpenPodcast = {
-                                navigator.showTab(AppDestination.PODCASTS)
-                                val localPodcastId = currentEntry?.podcastName
-                                    ?.let { podcastName ->
-                                        queueState.podcasts.firstOrNull { podcast ->
-                                            podcast.name.trim().equals(
-                                                podcastName.trim(),
-                                                ignoreCase = true,
-                                            )
-                                        }?.podcastId
+                        // The single light of Play in the open player (design audit 4.5).
+                        // «Light follows the voice» (design audit 5.8): only with its switch, while playing, in the
+                        // open player, without «remove animations» or the power saver; otherwise 1.
+                        val calmMotion = ru.e1173.nookast.designsystem.rememberReducedMotion()
+                        val powerSave = ru.e1173.nookast.designsystem.rememberPowerSaveMode()
+                        val voiceAllowed = displayPreferences.voiceLight && shownState.isPlaying && !calmMotion && !powerSave
+                        // The level of what is audible now; off or unknown, the light returns to rest over the
+                        // envelope's 300 ms release instead of jumping (the switch acts at once).
+                        val voiceFactor = remember { androidx.compose.animation.core.Animatable(1f) }
+                        val voiceLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+                        LaunchedEffect(voiceAllowed, voiceLifecycle) {
+                            if (!voiceAllowed) {
+                                voiceFactor.animateTo(1f, androidx.compose.animation.core.tween(VOICE_RELEASE_MS))
+                                return@LaunchedEffect
+                            }
+                            // Only while the screen is visible; each step glides over 60 ms (review of audit 5).
+                            voiceLifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                                ru.e1173.nookast.player.VoiceLevel.level.collectLatest { level ->
+                                    if (level == null) {
+                                        voiceFactor.animateTo(1f, androidx.compose.animation.core.tween(VOICE_RELEASE_MS))
+                                    } else {
+                                        voiceFactor.animateTo(VOICE_BASE + VOICE_SWING * level, androidx.compose.animation.core.tween(VOICE_STEP_MS))
                                     }
-                                if (localPodcastId != null) {
-                                    if (wide) navigator.replaceTop(Route.Podcast(localPodcastId)) else navigator.push(Route.Podcast(localPodcastId))
-                                    pendingPodcastEpisodeId = null
-                                    queueViewModel.loadPodcastDetailsById(localPodcastId)
-                                } else {
-                                    pendingPodcastEpisodeId = currentEpisodeId
                                 }
-                                playerExpanded = false
-                            },
-                            onTogglePlayback = {
-                                val preview = previewEntry
-                                val previewIndex = preview?.let { p -> queueState.entries.indexOfFirst { it.episodeId == p.episodeId } } ?: -1
-                                if (previewIndex >= 0) {
-                                    previewEntry = null
-                                    stagedNowPlayingEntry = preview
-                                    playbackViewModel.playQueue(queueState.entries, previewIndex)
-                                    return@NowPlayingScreen
-                                }
-                                stagedNowPlayingEntry?.let(queueViewModel::addStartedEpisodeToQueue)
-                                playbackViewModel.togglePlayPause()
-                            },
-                            onSeekBack = {
-                                if (previewEntry == null) playbackViewModel.seekBy(-playbackState.seekBackSeconds * 1_000L)
-                            },
-                            onSeekForward = {
-                                if (previewEntry == null) playbackViewModel.seekBy(playbackState.seekForwardSeconds * 1_000L)
-                            },
-                            onSeekTo = { if (previewEntry == null) playbackViewModel.seekTo(it) },
-                            onRunDiagnostics = playbackViewModel::runExtendedDiagnostics,
-                            onDownloadToServer = playbackViewModel::downloadCurrentToServer,
-                            onPlayEpisode = { index ->
-                                pickFromQueue(index)
-                            },
-                            onMoveEpisode = queueViewModel::moveInQueueTo,
-                            onRemoveEpisode = queueViewModel::removeFromQueue,
-                            onDownloadEpisode = queueViewModel::downloadEpisode,
-                            onDeleteDownloadEpisode = queueViewModel::removeEpisodeDownload,
-                            onMarkEpisodePlayed = queueViewModel::markEpisodePlayed,
-                            onDownloadCurrent = {
-                                (previewEntry ?: currentEntry)?.let(queueViewModel::downloadEpisode)
-                                    ?: playbackViewModel.downloadCurrentEpisode()
-                            },
-                            onDeleteCurrentDownload = {
-                                queueViewModel.removeEpisodeDownload(previewEntry?.episodeId ?: currentEpisodeId)
-                            },
-                            onMarkPlayed = {
-                                previewEntry?.let { preview ->
-                                    queueViewModel.markEpisodePlayed(preview)
-                                    previewEntry = null
-                                    return@NowPlayingScreen
-                                }
-                                // The next queued episode takes the screen; an empty queue closes it.
-                                playbackViewModel.markCurrentPlayed(
-                                    queueState.entries.filter { it.episodeId != currentEpisodeId && it.completed != true },
-                                )
-                            },
-                            onAudioOverallGainChanged = playbackViewModel::setAudioOverallGainDb,
-                            onAudioBassChanged = playbackViewModel::setAudioBassDb,
-                            onAudioSpeechClarityChanged = playbackViewModel::setAudioSpeechClarity,
-                            isSaved = shownSaved,
-                            onToggleSaved = {
-                                queueViewModel.toggleSavedEpisode(
-                                    episodeId = previewEntry?.episodeId ?: currentEpisodeId,
-                                    currentlySaved = shownSaved,
-                                )
-                            },
-                        )
+                            }
+                        }
+                        val playLight = ru.e1173.nookast.designsystem.rememberPlayLight(shownState.isPlaying, shownState.isBuffering, voice = { voiceFactor.value })
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            // A preview of another episode shows other artwork: no shared cover then (review of audit 4).
+                            ru.e1173.nookast.designsystem.LocalCoverTransition provides ru.e1173.nookast.designsystem.NookCoverTransition(coverScope, this).takeIf { previewEntry == null },
+                            ru.e1173.nookast.designsystem.LocalPlayerDismiss provides playerDismiss,
+                            ru.e1173.nookast.designsystem.LocalPlayLight provides playLight,
+                        ) {
+                            NowPlayingScreen(
+                                playbackState = shownState,
+                                queueState = queueState,
+                                currentEntry = previewEntry ?: currentEntry,
+                                podcastDetails = shownDetails,
+                                podcastDetailsLoading = shownDetailsLoading,
+                                playingElsewhere = playbackState.title.takeIf { previewEntry != null },
+                                onReturnToPlaying = { previewEntry = null },
+                                playingEpisodeId = playbackState.currentEpisodeId,
+                                wide = wide,
+                                largeControls = largeControls,
+                                initialTab = initialPlayerTab,
+                                onCollapse = { playerExpanded = false },
+                                onOpenUpNext = { upNextExpanded = true },
+                                onOpenPodcast = {
+                                    navigator.showTab(AppDestination.PODCASTS)
+                                    val localPodcastId = currentEntry?.podcastName
+                                        ?.let { podcastName ->
+                                            queueState.podcasts.firstOrNull { podcast ->
+                                                podcast.name.trim().equals(
+                                                    podcastName.trim(),
+                                                    ignoreCase = true,
+                                                )
+                                            }?.podcastId
+                                        }
+                                    if (localPodcastId != null) {
+                                        if (wide) navigator.replaceTop(Route.Podcast(localPodcastId)) else navigator.push(Route.Podcast(localPodcastId))
+                                        pendingPodcastEpisodeId = null
+                                        queueViewModel.loadPodcastDetailsById(localPodcastId)
+                                    } else {
+                                        pendingPodcastEpisodeId = currentEpisodeId
+                                    }
+                                    playerExpanded = false
+                                },
+                                onTogglePlayback = {
+                                    val preview = previewEntry
+                                    val previewIndex = preview?.let { p -> queueState.entries.indexOfFirst { it.episodeId == p.episodeId } } ?: -1
+                                    if (previewIndex >= 0) {
+                                        previewEntry = null
+                                        stagedNowPlayingEntry = preview
+                                        playbackViewModel.playQueue(queueState.entries, previewIndex)
+                                        return@NowPlayingScreen
+                                    }
+                                    stagedNowPlayingEntry?.let(queueViewModel::addStartedEpisodeToQueue)
+                                    playbackViewModel.togglePlayPause()
+                                },
+                                onSeekBack = {
+                                    if (previewEntry == null) playbackViewModel.seekBy(-playbackState.seekBackSeconds * 1_000L)
+                                },
+                                onSeekForward = {
+                                    if (previewEntry == null) playbackViewModel.seekBy(playbackState.seekForwardSeconds * 1_000L)
+                                },
+                                onSeekTo = { if (previewEntry == null) playbackViewModel.seekTo(it) },
+                                onRunDiagnostics = playbackViewModel::runExtendedDiagnostics,
+                                onDownloadToServer = playbackViewModel::downloadCurrentToServer,
+                                onPlayEpisode = { index ->
+                                    pickFromQueue(index)
+                                },
+                                onMoveEpisode = queueViewModel::moveInQueueTo,
+                                onRemoveEpisode = queueViewModel::removeFromQueue,
+                                onDownloadEpisode = queueViewModel::downloadEpisode,
+                                onDeleteDownloadEpisode = queueViewModel::removeEpisodeDownload,
+                                onMarkEpisodePlayed = queueViewModel::markEpisodePlayed,
+                                onDownloadCurrent = {
+                                    (previewEntry ?: currentEntry)?.let(queueViewModel::downloadEpisode)
+                                        ?: playbackViewModel.downloadCurrentEpisode()
+                                },
+                                onDeleteCurrentDownload = {
+                                    queueViewModel.removeEpisodeDownload(previewEntry?.episodeId ?: currentEpisodeId)
+                                },
+                                onMarkPlayed = {
+                                    previewEntry?.let { preview ->
+                                        queueViewModel.markEpisodePlayed(preview)
+                                        previewEntry = null
+                                        return@NowPlayingScreen
+                                    }
+                                    // The next queued episode takes the screen; an empty queue closes it.
+                                    playbackViewModel.markCurrentPlayed(
+                                        queueState.entries.filter { it.episodeId != currentEpisodeId && it.completed != true },
+                                    )
+                                },
+                                isSaved = shownSaved,
+                                onToggleSaved = {
+                                    queueViewModel.toggleSavedEpisode(
+                                        episodeId = previewEntry?.episodeId ?: currentEpisodeId,
+                                        currentlySaved = shownSaved,
+                                    )
+                                },
+                            )
+                        }
                     }
 
                     AnimatedVisibility(
                         visible = !playerExpanded && !upNextExpanded,
-                        enter = fadeIn(tween(220)) +
-                            scaleIn(tween(280), initialScale = 0.96f) +
-                            slideInVertically(tween(280)) { it / 3 },
-                        exit = fadeOut(tween(160)) +
-                            scaleOut(tween(220), targetScale = 0.96f) +
-                            slideOutVertically(tween(220)) { it / 3 },
+                        enter = fadeIn(ru.e1173.nookast.designsystem.NookMotion.standard()) +
+                            scaleIn(ru.e1173.nookast.designsystem.NookMotion.emphasized(), initialScale = 0.96f) +
+                            slideInVertically(ru.e1173.nookast.designsystem.NookMotion.emphasized()) { it / 3 },
+                        exit = fadeOut(ru.e1173.nookast.designsystem.NookMotion.fast()) +
+                            scaleOut(ru.e1173.nookast.designsystem.NookMotion.standard(), targetScale = 0.96f) +
+                            slideOutVertically(ru.e1173.nookast.designsystem.NookMotion.standard()) { it / 3 },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             // Floating card across the whole width, 8 dp from the sides on every screen (user,
@@ -969,27 +1040,31 @@ fun NookastRoot(
                             .padding(start = 8.dp, end = 8.dp, bottom = navigationBarHeight + 8.dp)
                             .fillMaxWidth(),
                     ) {
-                        if (currentEpisodeId != null) MiniPlayerBar(
-                            state = playbackState,
-                            artworkUrl = currentEntry?.artworkUrl.orEmpty()
-                                .ifBlank { playbackState.artworkUrl },
-                            showSeekButtons = wide || largeControls,
-                            largeControls = largeControls,
-                            onExpand = {
-                                initialPlayerTab = NowPlayingTab.PLAYBACK
-                                playerExpanded = true
-                            },
-                            onTogglePlayback = playbackViewModel::togglePlayPause,
-                            onSeekBack = {
-                                playbackViewModel.seekBy(-playbackState.seekBackSeconds * 1_000L)
-                            },
-                            onSeekForward = {
-                                playbackViewModel.seekBy(playbackState.seekForwardSeconds * 1_000L)
-                            },
-                            onOpenUpNext = { upNextExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            glass = Modifier.appGlass(hazeState, veil = 0.2f),
-                        )
+                        if (currentEpisodeId != null) androidx.compose.runtime.CompositionLocalProvider(
+                            ru.e1173.nookast.designsystem.LocalCoverTransition provides ru.e1173.nookast.designsystem.NookCoverTransition(coverScope, this),
+                        ) {
+                            MiniPlayerBar(
+                                state = playbackState,
+                                artworkUrl = currentEntry?.artworkUrl.orEmpty()
+                                    .ifBlank { playbackState.artworkUrl },
+                                showSeekButtons = wide || largeControls,
+                                largeControls = largeControls,
+                                onExpand = {
+                                    initialPlayerTab = NowPlayingTab.PLAYBACK
+                                    playerExpanded = true
+                                },
+                                onTogglePlayback = playbackViewModel::togglePlayPause,
+                                onSeekBack = {
+                                    playbackViewModel.seekBy(-playbackState.seekBackSeconds * 1_000L)
+                                },
+                                onSeekForward = {
+                                    playbackViewModel.seekBy(playbackState.seekForwardSeconds * 1_000L)
+                                },
+                                onOpenUpNext = { upNextExpanded = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                glass = Modifier.appGlass(hazeState, veil = 0.2f),
+                            )
+                        }
                         else QueueBar(
                             entries = queueState.entries,
                             largeControls = largeControls,
@@ -1010,6 +1085,7 @@ fun NookastRoot(
                             .padding(top = 8.dp),
                     )
                 }
+            }
             }
         }
     }
@@ -1060,8 +1136,8 @@ private fun LoginCard(
                 LoginStage.MFA -> stringResource(R.string.confirm_sign_in)
                 else -> stringResource(R.string.connect_server)
             },
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.sectionTitle,
+            color = ru.e1173.nookast.designsystem.LocalNookastColors.current.textPrimary,
         )
         Spacer(Modifier.height(16.dp))
 
@@ -1071,9 +1147,8 @@ private fun LoginCard(
                 InfoLine(stringResource(R.string.user), state.userId?.toString().orEmpty())
                 state.message?.let { StatusMessage(stringResource(it.text, it.arg.orEmpty()), isError = false) }
                 Spacer(Modifier.height(18.dp))
-                OutlinedButton(
+                NookButton(size = NookButtonSize.L, variant = NookButtonVariant.Outline,
                     onClick = onSignOut,
-                    shape = ConnectionFieldShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = touchTarget),
@@ -1088,7 +1163,7 @@ private fun LoginCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
+                NookTextField(
                     value = mfaCode,
                     onValueChange = { mfaCode = it.filter(Char::isDigit).take(12) },
                     label = { Text(stringResource(R.string.verification_code)) },
@@ -1097,19 +1172,17 @@ private fun LoginCard(
                         keyboardType = KeyboardType.NumberPassword,
                         imeAction = ImeAction.Done,
                     ),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 state.message?.let { StatusMessage(stringResource(it.text, it.arg.orEmpty()), isError = true) }
                 Spacer(Modifier.height(16.dp))
-                Button(
+                NookButton(size = NookButtonSize.L,
                     onClick = {
                         val submittedCode = mfaCode
                         mfaCode = ""
                         onVerifyMfa(submittedCode)
                     },
                     enabled = mfaCode.isNotBlank(),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = touchTarget),
@@ -1132,7 +1205,7 @@ private fun LoginCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                NookTextField(
                     value = serverHost,
                     onValueChange = { input ->
                         val trimmed = input.trimStart()
@@ -1158,7 +1231,6 @@ private fun LoginCard(
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Next,
                     ),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (serverProtocol == ServerProtocol.HTTP) {
@@ -1170,17 +1242,16 @@ private fun LoginCard(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                NookTextField(
                     value = username,
                     onValueChange = { username = it },
                     label = { Text(stringResource(R.string.username)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                NookTextField(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(stringResource(R.string.password)) },
@@ -1190,12 +1261,11 @@ private fun LoginCard(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 state.message?.let { StatusMessage(stringResource(it.text, it.arg.orEmpty()), isError = true) }
                 Spacer(Modifier.height(16.dp))
-                Button(
+                NookButton(size = NookButtonSize.L,
                     onClick = {
                         val submittedPassword = password
                         password = ""
@@ -1207,7 +1277,6 @@ private fun LoginCard(
                     },
                     enabled = state.stage != LoginStage.LOADING &&
                         serverHost.isNotBlank() && username.isNotBlank() && password.isNotEmpty(),
-                    shape = ConnectionFieldShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = touchTarget),
@@ -1242,30 +1311,30 @@ private fun ProtocolDropdown(
         onExpandedChange = { expanded = !expanded },
         modifier = modifier,
     ) {
-        OutlinedTextField(
+        NookTextField(
             value = selected.label,
             onValueChange = {},
             readOnly = true,
             singleLine = true,
             label = { Text(stringResource(R.string.server_protocol)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            shape = ConnectionFieldShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
+        // Styled as NookMenu (audit 3.6); the exposed menu keeps its anchoring to the field.
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            shape = ru.e1173.nookast.designsystem.NookShapes.m,
+            containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
         ) {
             ServerProtocol.entries.forEach { protocol ->
-                DropdownMenuItem(
-                    text = { Text(protocol.label) },
-                    onClick = {
-                        onSelected(protocol)
-                        expanded = false
-                    },
-                )
+                ru.e1173.nookast.designsystem.NookMenuItem(protocol.label, {
+                    onSelected(protocol)
+                    expanded = false
+                })
             }
         }
     }
@@ -1281,8 +1350,8 @@ private fun DeviceCard(
     SectionCard(modifier) {
         Text(
             stringResource(R.string.device_parameters),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
+            style = ru.e1173.nookast.designsystem.NookType.sectionTitle,
+            color = ru.e1173.nookast.designsystem.LocalNookastColors.current.textPrimary,
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -1330,9 +1399,8 @@ private fun DeviceCard(
             },
         )
         Spacer(Modifier.height(16.dp))
-        OutlinedButton(
+        NookButton(size = NookButtonSize.L, variant = NookButtonVariant.Outline,
             onClick = { copyDeviceReport(context, snapshot.asReport()) },
-            shape = ConnectionFieldShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = touchTarget),
@@ -1347,23 +1415,8 @@ private fun SectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = ConnectionPanelShape,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f),
-        ),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            content = content,
-        )
-    }
+    // Sign-in and the server card sit on the app's one card (audit 3.8).
+    ru.e1173.nookast.designsystem.NookCard(modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp), content = content)
 }
 
 @Composable
@@ -1388,8 +1441,8 @@ private fun DeviceLine(label: String, value: String) {
         )
         Text(
             value,
-            fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(0.55f),
+            style = ru.e1173.nookast.designsystem.NookType.body,
         )
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1400,7 +1453,7 @@ private fun StatusMessage(message: String, isError: Boolean) {
     Spacer(Modifier.height(12.dp))
     Text(
         text = message,
-        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        color = if (isError) MaterialTheme.colorScheme.error else ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
         style = MaterialTheme.typography.bodyMedium,
     )
 }
@@ -1409,3 +1462,9 @@ private fun copyDeviceReport(context: Context, report: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.device_report), report))
 }
+
+private const val PLAYER_EXIT_SETTLE_MS = 600L
+private const val VOICE_BASE = 0.85f
+private const val VOICE_SWING = 0.15f
+private const val VOICE_RELEASE_MS = 300
+private const val VOICE_STEP_MS = 60

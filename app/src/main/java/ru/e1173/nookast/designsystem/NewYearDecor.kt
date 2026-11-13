@@ -58,14 +58,9 @@ fun newYearActive(mode: NewYearMode, date: LocalDate, winterTheme: Boolean = tru
 
 val LocalNewYear = compositionLocalOf { false }
 
-/** System "remove animations": the snow stands still and the bulbs keep one colour. */
+/** System "remove animations": the snow stands still and the bulbs keep one colour (see [rememberReducedMotion]). */
 @Composable
-private fun motionReduced(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    return remember(resolver) {
-        android.provider.Settings.Global.getFloat(resolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-    }
-}
+private fun motionReduced(): Boolean = rememberReducedMotion()
 
 /**
  * A garland thrown over the cover by hand (user, 29.10.2026: the snow cap looked ugly and the

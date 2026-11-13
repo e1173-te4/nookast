@@ -1,5 +1,13 @@
 package ru.e1173.nookast.ui
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import ru.e1173.nookast.designsystem.drawBackdropGrain
+import ru.e1173.nookast.designsystem.driftedCenter
+import ru.e1173.nookast.designsystem.playerDismissDrag
+import ru.e1173.nookast.designsystem.sharedCover
+import ru.e1173.nookast.designsystem.nookCard
+import ru.e1173.nookast.designsystem.NookButton
+import ru.e1173.nookast.designsystem.NookButtonVariant
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.text.format.Formatter
 import androidx.compose.foundation.Canvas
@@ -60,7 +68,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -146,6 +153,8 @@ import ru.e1173.nookast.R
 import ru.e1173.nookast.data.local.QueueListEntry
 import ru.e1173.nookast.designsystem.snowDusted
 import ru.e1173.nookast.designsystem.LocalNookastColors
+import ru.e1173.nookast.designsystem.floatingShadow
+import ru.e1173.nookast.designsystem.scaleAlpha
 import ru.e1173.nookast.designsystem.blendedWithSky
 import ru.e1173.nookast.designsystem.DockDownloadState
 import ru.e1173.nookast.designsystem.NookActionDock
@@ -170,7 +179,6 @@ import ru.e1173.nookast.data.remote.PodcastDetails
 import ru.e1173.nookast.offline.EpisodeDownloadState
 import ru.e1173.nookast.offline.ServerDownloadProgress
 import ru.e1173.nookast.player.PlaybackUiState
-import ru.e1173.nookast.player.AudioProcessingSettings
 import ru.e1173.nookast.player.StreamReachability
 import ru.e1173.nookast.player.QueueSwipeAction
 
@@ -182,14 +190,14 @@ internal enum class NowPlayingTab {
 // Theme colours from the design tokens (DEC-017): these used to be fixed Lavender values.
 private val DownloadGreen: Color
     @Composable @ReadOnlyComposable get() = LocalNookastColors.current.success
-private val WarningCoral = Color(0xFFFF6B57)
+private val WarningCoral = ru.e1173.nookast.designsystem.NookFixedColors.WarningCoral
 private val PlayerControlPurple: Color
     @Composable @ReadOnlyComposable get() = LocalNookastColors.current.accent
-private val PlayerControlGradient: Brush
-    @Composable @ReadOnlyComposable get() = LocalNookastColors.current.let {
-        Brush.linearGradient(listOf(it.accent, it.accentStrong))
-    }
 private const val PREVIEW_ARTWORK_PREFIX = "preview://"
+
+// Cycles keep their own lengths (design audit 2.2).
+private const val PLAYING_BARS_CYCLE_MS = 900
+private const val SOURCE_PULSE_CYCLE_MS = 1800
 
 @Composable
 internal fun MiniPlayerBar(
@@ -232,7 +240,11 @@ internal fun MiniPlayerBar(
                 downloaded = false,
                 badgeSize = 0.dp,
                 cornerRadius = if (largeControls) 13.dp else 10.dp,
-                modifier = artworkModifier,
+                // Flies into the player's cover (design audit 4.1).
+                modifier = artworkModifier.sharedCover(
+                    radius = (if (largeControls) 13.dp else 10.dp) * ARTWORK_CORNER_SCALE,
+                    otherRadius = (if (largeControls) 32.dp else 24.dp) * ARTWORK_CORNER_SCALE,
+                ),
             )
         },
         modifier = modifier.snowDusted(16.dp, seed = 3),
@@ -274,9 +286,6 @@ internal fun NowPlayingScreen(
     onDownloadCurrent: () -> Unit,
     onDeleteCurrentDownload: () -> Unit,
     onMarkPlayed: () -> Unit,
-    onAudioOverallGainChanged: (Int) -> Unit,
-    onAudioBassChanged: (Int) -> Unit,
-    onAudioSpeechClarityChanged: (Int) -> Unit,
     isSaved: Boolean = false,
     onToggleSaved: () -> Unit = {},
     // The title of what plays while Now Playing shows another episode picked in Up Next, or null.
@@ -288,6 +297,15 @@ internal fun NowPlayingScreen(
 ) {
     val playerSettings by androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>().settings.collectAsStateWithLifecycle()
     var selectedTab by remember(initialTab) { mutableStateOf(initialTab) }
+    // Phone: the two tabs are pages that follow the finger (design audit 4.3).
+    val tabPager = androidx.compose.foundation.pager.rememberPagerState(initialPage = selectedTab.ordinal) { NowPlayingTab.entries.size }
+    LaunchedEffect(selectedTab) { if (tabPager.targetPage != selectedTab.ordinal) tabPager.animateScrollToPage(selectedTab.ordinal) }
+    val tabHaptics = ru.e1173.nookast.designsystem.rememberNookHaptics()
+    LaunchedEffect(tabPager.settledPage) {
+        val settled = NowPlayingTab.entries[tabPager.settledPage]
+        if (settled != selectedTab) tabHaptics.tick()
+        selectedTab = settled
+    }
     var sourceStatusExpanded by remember(sourceStatusInitiallyExpanded) {
         mutableStateOf(sourceStatusInitiallyExpanded)
     }
@@ -335,6 +353,7 @@ internal fun NowPlayingScreen(
         ArtworkTintBackdrop(
             url = currentEntry?.artworkUrl.orEmpty().ifBlank { playbackState.artworkUrl },
             modifier = Modifier.matchParentSize(),
+            living = playbackState.isPlaying,
         )
         // Snow falls on the background, behind the cover and the controls (user, 2.11.2026).
         if (ru.e1173.nookast.designsystem.LocalNewYear.current) {
@@ -422,21 +441,13 @@ internal fun NowPlayingScreen(
                             .weight(detailsWeight)
                             .fillMaxHeight()
                             .hazeSource(nowPlayingHaze)
-                            .glassEdgeFade()
-                            .then(
-                                if (largeControls) {
-                                    // A faint veil of the text colour over the screen's own light, no outline (user,
-                                    // 3.11.2026: a solid surface of another colour with a hard edge looked dirty and
-                                    // echoed the episode tiles inside it).
-                                    Modifier
-                                        .clip(RoundedCornerShape(28.dp))
-                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.035f))
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                            // No underlay (user, 11.11.2026: on the large screen at night the faint veil read as a lighter
+                            // block; without it the pane lies on the screen's own light like everything else).
+                            .glassEdgeFade(),
                     ) {
-                        if (selectedTab == NowPlayingTab.PLAYBACK) {
+                        // Wide: the right pane changes with a cross-fade (design audit 4.3).
+                        androidx.compose.animation.Crossfade(selectedTab, Modifier.fillMaxSize(), ru.e1173.nookast.designsystem.NookMotion.standard(), label = "playerPane") { shownTab ->
+                        if (shownTab == NowPlayingTab.PLAYBACK) {
                             UpNextPanel(
                                 entries = queueState.entries,
                                 downloadStates = queueState.downloadStates,
@@ -479,11 +490,12 @@ internal fun NowPlayingScreen(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
+                        }
                     }
                 }
             } else {
-                Box(Modifier.fillMaxSize()) {
-                    if (selectedTab == NowPlayingTab.PLAYBACK) {
+                androidx.compose.foundation.pager.HorizontalPager(tabPager, Modifier.fillMaxSize(), beyondViewportPageCount = 0) { page ->
+                    if (page == NowPlayingTab.PLAYBACK.ordinal) {
                         PlayerPane(
                                 state = playbackState,
                                 artworkUrl = currentEntry?.artworkUrl.orEmpty()
@@ -555,6 +567,7 @@ internal fun NowPlayingScreen(
                 wide = wide,
                 largeControls = largeControls,
                 selectedTab = selectedTab,
+                pageFraction = if (wide) null else ({ (tabPager.currentPage + tabPager.currentPageOffsetFraction).coerceIn(0f, 1f) }),
                 onTabSelected = {
                     selectedTab = it
                     sourceStatusExpanded = false
@@ -581,21 +594,19 @@ internal fun NowPlayingScreen(
                         indication = null,
                     ) { equalizerExpanded = false },
             )
-            AudioProcessingPopover(
+            // Within the window: on the car profile the two columns ran off the right edge (13.11.2026).
+            val popoverX = if (wide) { if (largeControls) 162.67.dp else 86.dp } else 0.dp
+            val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+            val windowDp = with(LocalDensity.current) { windowInfo.containerSize.width.toDp() to windowInfo.containerSize.height.toDp() }
+            SoundPopover(
                 largeControls = largeControls,
-                settings = playbackState.audioProcessingSettings,
-                support = playbackState.audioProcessingSupport,
-                onOverallGainChanged = onAudioOverallGainChanged,
-                onBassChanged = onAudioBassChanged,
-                onSpeechClarityChanged = onAudioSpeechClarityChanged,
+                wide = wide,
+                maxWidth = windowDp.first - popoverX - 16.dp,
+                maxHeight = windowDp.second - statusInset - 96.dp,
                 modifier = Modifier
                     .align(if (wide) Alignment.TopStart else Alignment.TopCenter)
                     .offset(
-                        x = if (wide) {
-                            if (largeControls) 162.67.dp else 86.dp
-                        } else {
-                            0.dp
-                        },
+                        x = popoverX,
                         y = statusInset + if (largeControls) 66.67.dp else 64.dp,
                     )
                     .zIndex(31f),
@@ -624,7 +635,7 @@ private fun PlayingBars(modifier: Modifier = Modifier) {
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            tween(900, easing = androidx.compose.animation.core.LinearEasing),
+            tween(PLAYING_BARS_CYCLE_MS, easing = androidx.compose.animation.core.LinearEasing),
         ),
         label = "phase",
     )
@@ -678,29 +689,19 @@ internal fun UpNextScreen(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (onBack != null) {
-                    val backDescription = stringResource(R.string.back)
-                    IconButton(
-                        onClick = onBack,
-                    modifier = Modifier.size(48.dp).semantics { contentDescription = backDescription },
-                ) {
-                    Box(Modifier.size(38.dp).floatingDisc().background(LocalNookastColors.current.tintContainer, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(NookIcons.ChevronLeft, null, tint = LocalNookastColors.current.accent, modifier = Modifier.size(18.dp))
-                    }
-                    }
+                    ru.e1173.nookast.designsystem.NookHeaderDisc(NookIcons.ChevronLeft, stringResource(R.string.back), onBack)
                 } else {
                     Spacer(Modifier.width(8.dp))
                 }
                 Text(
                     stringResource(R.string.queue_title),
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp, lineHeight = 19.sp),
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.queueTitle),
                 )
                 val count = queueState.entries.size
                 Text(
                     pluralStringResource(R.plurals.queue_episode_count, count, count),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.queueCount),
+                    color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
                     modifier = Modifier
                         .padding(start = 4.dp)
                         .background(LocalNookastColors.current.artworkPlaceholder, CircleShape)
@@ -738,6 +739,8 @@ private fun PlayerHeader(
     wide: Boolean,
     largeControls: Boolean,
     selectedTab: NowPlayingTab,
+    /** Phone: the pager position, 0 on Playback and 1 on Description; the underlines follow it (4.3). */
+    pageFraction: (() -> Float)? = null,
     onTabSelected: (NowPlayingTab) -> Unit,
     onShowEqualizer: () -> Unit,
     onCollapse: () -> Unit,
@@ -766,23 +769,24 @@ private fun PlayerHeader(
                 },
             )
             .zIndex(10f)
+            // Pulling down here closes the player (design audit 4.2).
+            .playerDismissDrag()
             .padding(horizontal = 4.dp),
     ) {
-        IconButton(
+        // The shared icon button as a bare glyph (DEC-059): no disc over the cover light.
+        ru.e1173.nookast.designsystem.NookHeaderDisc(
+            icon = NookIcons.ChevronDown,
+            contentDescription = collapseDescription,
             onClick = onCollapse,
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .offset(x = 3.dp, y = contentOffsetY)
-                .size(if (largeControls) 48.dp else 40.dp)
-                .semantics { contentDescription = collapseDescription },
-        ) {
-            Icon(
-                NookIcons.ChevronDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(if (largeControls) 30.dp else 20.dp),
-            )
-        }
+                .offset(x = 3.dp, y = contentOffsetY),
+            discSize = 40.dp * if (largeControls) 4f / 3f else 1f,
+            // Laid out at the disc, where the old 40 / 48 dp button stood; the header keeps its height.
+            zone = 40.dp * if (largeControls) 4f / 3f else 1f,
+            fill = Color.Transparent,
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
         Row(
             modifier = Modifier
                 .then(
@@ -807,6 +811,7 @@ private fun PlayerHeader(
             PlayerTab(
                 text = stringResource(R.string.playback_tab),
                 selected = selectedTab == NowPlayingTab.PLAYBACK,
+                selection = pageFraction?.let { f -> { 1f - f() } } ?: { if (selectedTab == NowPlayingTab.PLAYBACK) 1f else 0f },
                 playbackTab = true,
                 wide = wide,
                 largeControls = largeControls,
@@ -817,6 +822,7 @@ private fun PlayerHeader(
             PlayerTab(
                 text = stringResource(R.string.description_tab),
                 selected = selectedTab == NowPlayingTab.DESCRIPTION,
+                selection = pageFraction ?: { if (selectedTab == NowPlayingTab.DESCRIPTION) 1f else 0f },
                 playbackTab = false,
                 wide = wide,
                 largeControls = largeControls,
@@ -882,60 +888,13 @@ private fun PlayerHeader(
     }
 }
 
-@Composable
-private fun FavoriteGlyph(filled: Boolean, modifier: Modifier = Modifier) {
-    val color = if (filled) PlayerControlPurple else MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier) {
-        val path = Path().apply {
-            moveTo(size.width * 0.50f, size.height * 0.88f)
-            cubicTo(
-                size.width * 0.42f,
-                size.height * 0.77f,
-                size.width * 0.12f,
-                size.height * 0.58f,
-                size.width * 0.12f,
-                size.height * 0.33f,
-            )
-            cubicTo(
-                size.width * 0.12f,
-                size.height * 0.12f,
-                size.width * 0.40f,
-                size.height * 0.08f,
-                size.width * 0.50f,
-                size.height * 0.27f,
-            )
-            cubicTo(
-                size.width * 0.60f,
-                size.height * 0.08f,
-                size.width * 0.88f,
-                size.height * 0.12f,
-                size.width * 0.88f,
-                size.height * 0.33f,
-            )
-            cubicTo(
-                size.width * 0.88f,
-                size.height * 0.58f,
-                size.width * 0.58f,
-                size.height * 0.77f,
-                size.width * 0.50f,
-                size.height * 0.88f,
-            )
-            close()
-        }
-        drawPath(
-            path,
-            color,
-            style = if (filled) androidx.compose.ui.graphics.drawscope.Fill
-            else Stroke(size.minDimension * 0.09f, cap = StrokeCap.Round),
-        )
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlayerTab(
     text: String,
     selected: Boolean,
+    /** How much of the underline shows: 0..1, following the pager (design audit 4.3). */
+    selection: () -> Float = { if (selected) 1f else 0f },
     playbackTab: Boolean,
     wide: Boolean,
     largeControls: Boolean,
@@ -981,11 +940,11 @@ private fun PlayerTab(
                 // Mockup: the selected tab is text-primary and bold, the accent is only the underline.
                 color = if (selected) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = ru.e1173.nookast.designsystem.NookPlayerType.tabWeight(selected),
                 style = when {
-                    largeControls -> MaterialTheme.typography.titleMedium.copy(fontSize = 22.sp)
-                    wide -> MaterialTheme.typography.bodyMedium.copy(fontSize = 15.25.sp)
-                    else -> MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp, letterSpacing = (-0.025).em)
+                    largeControls -> MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.tabLarge)
+                    wide -> MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.tabWide)
+                    else -> MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.tab)
                 },
                 maxLines = 1,
                 // Phone: a long label (RU «Воспроизведение», large interface scale) shrinks to fit
@@ -1016,12 +975,17 @@ private fun PlayerTab(
                     )
                     .height(3.dp)
                     // Night reference: the underline glows (0 0 8px accent .7).
+                    .graphicsLayer {
+                        val s = selection()
+                        alpha = s
+                        scaleX = 0.4f + 0.6f * s
+                    }
                     .drawBehind {
-                        if (selected && underlineGlow.alpha > 0f) drawGlowBar(underlineGlow, Offset.Zero, size, 8.dp)
+                        if (selection() > 0f && underlineGlow.alpha > 0f) drawGlowBar(underlineGlow, Offset.Zero, size, 8.dp)
                     }
                     .background(
-                        if (selected) PlayerControlPurple else Color.Transparent,
-                        RoundedCornerShape(2.dp),
+                        PlayerControlPurple,
+                        ru.e1173.nookast.designsystem.NookShapes.full,
                     ),
             )
         }
@@ -1044,7 +1008,7 @@ private fun SourceStatusPopover(
     // word and host, the quality tag; two tiles (quality, buffer ring); status pills; the server
     // copy offer and a quiet "Check connection" row.
     val colors = LocalNookastColors.current
-    val coral = if (colors.isDark) Color(0xFFFF6E61) else Color(0xFFED6575)
+    val coral = ru.e1173.nookast.designsystem.NookFixedColors.alertCoral(colors.isDark)
     val tone = when {
         state.isLocalSource -> colors.success
         state.streamReachability == StreamReachability.UNAVAILABLE -> coral
@@ -1055,7 +1019,7 @@ private fun SourceStatusPopover(
     val card = colors.surface.compositeOver(colors.background)
     val border = colors.divider
     val tileColor = colors.textSecondary.copy(alpha = if (colors.isDark) 0.10f else 0.07f)
-    val captionStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, letterSpacing = 0.6.sp)
+    val captionStyle = MaterialTheme.typography.labelSmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceCaption)
     Box(
         modifier = modifier
             .wrapContentHeight(align = Alignment.Top, unbounded = true)
@@ -1080,7 +1044,10 @@ private fun SourceStatusPopover(
                     val r = 22.dp.toPx()
                     val p = pointerHeight.toPx()
                     inset(0f, if (pointerAtBottomStart) 0f else p, 0f, if (pointerAtBottomStart) p else 0f) {
-                        drawCssShadow(Color.Black.copy(alpha = if (colors.isDark) 0.45f else 0.16f), 32.dp, r, dy = 12.dp)
+                        // The same two layers as floatingShadow (one shadow for all floating surfaces).
+                        val ink = if (colors.isDark) Color.Black else colors.textPrimary
+                        drawCssShadow(ink.copy(alpha = if (colors.isDark) 0.42f else 0.12f), 40.dp, r, dy = 14.dp)
+                        drawCssShadow(ink.copy(alpha = if (colors.isDark) 0.30f else 0.06f), 6.dp, r, dy = 1.dp)
                         if (colors.isDark) drawCssShadow(tone.copy(alpha = 0.10f), 24.dp, r)
                     }
                 }
@@ -1109,13 +1076,12 @@ private fun SourceStatusPopover(
                                 else -> R.string.badge_checking
                             },
                         ),
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceTitle),
                         color = colors.textPrimary,
                     )
                     Text(
                         sourceLabel(state),
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        style = MaterialTheme.typography.bodySmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceBody),
                         color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1124,24 +1090,23 @@ private fun SourceStatusPopover(
                 if (quality != null) {
                     Box(
                         Modifier
-                            .border(1.5.dp, colors.textPrimary.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
+                            .border(1.5.dp, colors.textPrimary.copy(alpha = 0.7f), ru.e1173.nookast.designsystem.NookShapes.xs)
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                     ) {
-                        Text(quality, style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, letterSpacing = 0.5.sp), fontWeight = FontWeight.ExtraBold, color = colors.textPrimary)
+                        Text(quality, style = MaterialTheme.typography.labelLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceQuality), color = colors.textPrimary)
                     }
                 }
             }
             // Tiles: quality and buffer.
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(tileColor).padding(12.dp),
+                    Modifier.weight(1f).clip(ru.e1173.nookast.designsystem.NookShapes.m).background(tileColor).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(stringResource(R.string.quality_field).uppercase(), style = captionStyle, color = colors.textSecondary)
                     Text(
                         state.bitrateKbps?.let { stringResource(R.string.audio_bitrate_kbps, it) } ?: "—",
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceMetric),
                         color = colors.textPrimary,
                     )
                     Text(
@@ -1158,7 +1123,7 @@ private fun SourceStatusPopover(
                     )
                 }
                 Row(
-                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(tileColor).padding(12.dp),
+                    Modifier.weight(1f).clip(ru.e1173.nookast.designsystem.NookShapes.m).background(tileColor).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -1174,7 +1139,7 @@ private fun SourceStatusPopover(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(stringResource(R.string.cache_field_short).uppercase(), style = captionStyle, color = colors.textSecondary)
-                        Text("${cachedPercent(state)}%", style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp), fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                        Text("${cachedPercent(state)}%", style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceMetric), color = colors.textPrimary)
                         Text(
                             if (state.isLocalSource) {
                                 stringResource(R.string.cache_entire_episode)
@@ -1221,7 +1186,7 @@ private fun SourceStatusPopover(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.m)
                     .clickable(enabled = !state.diagnosticsRunning) { onRunDiagnostics() }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1229,17 +1194,16 @@ private fun SourceStatusPopover(
                 Text(
                     stringResource(R.string.check_connection),
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.accent,
+                    style = MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceAction),
+                    color = colors.accentText,
                 )
                 if (state.diagnosticsRunning) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.accent)
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.accentText)
                 } else {
-                    Icon(NookIcons.ChevronRight, null, tint = colors.accent, modifier = Modifier.size(14.dp))
+                    Icon(NookIcons.ChevronRight, null, tint = colors.accentText, modifier = Modifier.size(14.dp))
                 }
             }
-            state.diagnosticResults.take(2).forEach { result ->
+            state.diagnosticResults.forEach { result ->
                 val host = result.requestedHost.ifBlank { result.resolvedHost }
                 Text(
                     if (result.isAvailable) {
@@ -1263,7 +1227,7 @@ private fun SourcePulseGlyph(tone: Color, local: Boolean, pulsing: Boolean) {
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            tween(1800, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            tween(SOURCE_PULSE_CYCLE_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         ),
         label = "sourcePulsePhase",
     )
@@ -1296,203 +1260,6 @@ private fun SourcePill(text: String, dot: Color?, background: Color) {
     ) {
         if (dot != null) Box(Modifier.size(7.dp).background(dot, CircleShape))
         Text(text, style = MaterialTheme.typography.labelMedium, color = LocalNookastColors.current.textPrimary, maxLines = 1)
-    }
-}
-
-@Composable
-private fun AudioProcessingPopover(
-    largeControls: Boolean,
-    settings: AudioProcessingSettings,
-    support: ru.e1173.nookast.player.AudioProcessingSupport,
-    onOverallGainChanged: (Int) -> Unit,
-    onBassChanged: (Int) -> Unit,
-    onSpeechClarityChanged: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val surfaceColor = MaterialTheme.colorScheme.surfaceContainer
-    val outline = MaterialTheme.colorScheme.outlineVariant
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(modifier.width(if (largeControls) 340.dp else 300.dp)) {
-        Canvas(
-            Modifier
-                .align(Alignment.TopStart)
-                .offset(x = if (largeControls) 77.dp else 66.dp)
-                .size(width = 40.dp, height = 23.dp)
-                .zIndex(1f),
-        ) {
-            val pointer = Path().apply {
-                moveTo(0f, size.height)
-                lineTo(size.width * 0.5f, 0f)
-                lineTo(size.width, size.height)
-                close()
-            }
-            drawPath(pointer, surfaceColor)
-            drawPath(pointer, outline, style = Stroke(1.dp.toPx()))
-        }
-        Surface(
-            modifier = Modifier
-                .padding(top = 21.dp)
-                .fillMaxWidth()
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = {},
-                ),
-            shape = RoundedCornerShape(if (largeControls) 20.dp else 16.dp),
-            color = surfaceColor,
-            border = BorderStroke(if (largeControls) 2.dp else 1.dp, outline),
-            shadowElevation = 12.dp,
-        ) {
-            Column(
-                Modifier.padding(
-                    start = if (largeControls) 31.dp else 24.dp,
-                    end = if (largeControls) 39.dp else 24.dp,
-                    top = if (largeControls) 26.dp else 22.dp,
-                    bottom = if (largeControls) 11.dp else 18.dp,
-                ),
-            ) {
-                Text(
-                    stringResource(R.string.audio_processing_title),
-                    style = if (largeControls) {
-                        MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 27.sp)
-                    } else {
-                        MaterialTheme.typography.titleMedium
-                    },
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Spacer(Modifier.height(if (largeControls) 35.dp else 26.dp))
-                AudioProcessingLevel(
-                    label = stringResource(R.string.audio_overall_gain),
-                    value = settings.overallGainDb,
-                    valueText = if (support.overallGain) {
-                        stringResource(R.string.audio_decibel_value, settings.overallGainDb)
-                    } else {
-                        stringResource(R.string.audio_unavailable)
-                    },
-                    valueRange = AudioProcessingSettings.MIN_OVERALL_GAIN_DB..AudioProcessingSettings.MAX_OVERALL_GAIN_DB,
-                    enabled = support.overallGain,
-                    onValueChange = onOverallGainChanged,
-                    largeControls = largeControls,
-                )
-                Spacer(Modifier.height(if (largeControls) 13.dp else 22.dp))
-                AudioProcessingLevel(
-                    label = stringResource(R.string.audio_bass),
-                    value = settings.bassDb,
-                    valueText = if (support.bass) {
-                        stringResource(R.string.audio_decibel_value, settings.bassDb)
-                    } else {
-                        stringResource(R.string.audio_unavailable)
-                    },
-                    valueRange = AudioProcessingSettings.MIN_BASS_DB..AudioProcessingSettings.MAX_BASS_DB,
-                    enabled = support.bass,
-                    onValueChange = onBassChanged,
-                    largeControls = largeControls,
-                )
-                Spacer(Modifier.height(if (largeControls) 13.dp else 22.dp))
-                AudioProcessingLevel(
-                    label = stringResource(R.string.audio_speech_clarity),
-                    value = settings.speechClarity,
-                    valueText = if (support.speechClarity) {
-                        settings.speechClarity.toString()
-                    } else {
-                        stringResource(R.string.audio_unavailable)
-                    },
-                    valueRange = AudioProcessingSettings.MIN_SPEECH_CLARITY..AudioProcessingSettings.MAX_SPEECH_CLARITY,
-                    enabled = support.speechClarity,
-                    onValueChange = onSpeechClarityChanged,
-                    largeControls = largeControls,
-                )
-                Spacer(Modifier.height(if (largeControls) 10.dp else 16.dp))
-                Text(
-                    stringResource(R.string.audio_safe_limit),
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.End,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AudioProcessingLevel(
-    label: String,
-    value: Int,
-    valueText: String,
-    valueRange: IntRange,
-    enabled: Boolean,
-    onValueChange: (Int) -> Unit,
-    largeControls: Boolean,
-) {
-    val active = PlayerControlPurple
-    val track = MaterialTheme.colorScheme.outlineVariant
-    val thumbStroke = MaterialTheme.colorScheme.onSurface
-    val fraction = if (valueRange.last > valueRange.first) {
-        (value.coerceIn(valueRange.first, valueRange.last) - valueRange.first).toFloat() /
-            (valueRange.last - valueRange.first).toFloat()
-    } else {
-        0f
-    }
-    Row(
-        Modifier.fillMaxWidth().graphicsLayer { alpha = if (enabled) 1f else 0.55f },
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            label,
-            style = if (largeControls) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            valueText,
-            style = if (largeControls) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    Spacer(Modifier.height(if (largeControls) 15.dp else 11.dp))
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(if (largeControls) 30.dp else 26.dp)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.55f }
-            .semantics {
-                contentDescription = label
-                progressBarRangeInfo = ProgressBarRangeInfo(
-                    current = value.toFloat(),
-                    range = valueRange.first.toFloat()..valueRange.last.toFloat(),
-                    steps = (valueRange.last - valueRange.first - 1).coerceAtLeast(0),
-                )
-                setProgress { target ->
-                    if (!enabled) return@setProgress false
-                    onValueChange(target.roundToInt().coerceIn(valueRange.first, valueRange.last))
-                    true
-                }
-            }
-            .pointerInput(enabled, valueRange) {
-                if (!enabled) return@pointerInput
-                fun update(x: Float) {
-                    val ratio = (x / size.width.toFloat()).coerceIn(0f, 1f)
-                    val next = (valueRange.first + ratio *
-                        (valueRange.last - valueRange.first)).roundToInt()
-                    onValueChange(next.coerceIn(valueRange.first, valueRange.last))
-                }
-                detectDragGestures(
-                    onDragStart = { update(it.x) },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        update(change.position.x)
-                    },
-                )
-            },
-    ) {
-        val centerY = size.height / 2f
-        val lineWidth = if (largeControls) 6.67.dp.toPx() else 5.dp.toPx()
-        val thumbRadius = if (largeControls) 12.dp.toPx() else 9.dp.toPx()
-        val thumbX = thumbRadius + (size.width - thumbRadius * 2f) * fraction
-        drawLine(track, Offset(thumbRadius, centerY), Offset(size.width - thumbRadius, centerY), lineWidth, StrokeCap.Round)
-        drawLine(active, Offset(thumbRadius, centerY), Offset(thumbX, centerY), lineWidth, StrokeCap.Round)
-        drawCircle(active, thumbRadius, Offset(thumbX, centerY))
-        drawCircle(thumbStroke, thumbRadius, Offset(thumbX, centerY), style = Stroke(if (largeControls) 2.dp.toPx() else 1.dp.toPx()))
     }
 }
 
@@ -1553,7 +1320,11 @@ private fun PlayerPane(
         PlayerPaneLayout(
             minHeight = paneHeight,
             bottomCount = 3, // chapter pill, spacer, dock
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), flingBehavior = deviceFling()),
+            // Pulling the pane down past its top closes the player (design audit 4.2, via nested scroll).
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(ru.e1173.nookast.designsystem.rememberPlayerDismissScroll()?.let { Modifier.nestedScroll(it) } ?: Modifier)
+                .verticalScroll(rememberScrollState(), flingBehavior = deviceFling()),
         ) {
             BoxWithConstraints(
                 Modifier
@@ -1600,10 +1371,15 @@ private fun PlayerPane(
                         }
                         .then(
                             if (coverColors.isDark) {
-                                Modifier.border(1.dp, coverColors.divider.copy(alpha = 0.85f), RoundedCornerShape(coverRadius * ARTWORK_CORNER_SCALE))
+                                Modifier.border(1.dp, coverColors.divider.scaleAlpha(0.85f), RoundedCornerShape(coverRadius * ARTWORK_CORNER_SCALE))
                             } else {
                                 Modifier
                             },
+                        )
+                        // The mini-player's cover grows into this one (design audit 4.1).
+                        .sharedCover(
+                            radius = coverRadius * ARTWORK_CORNER_SCALE,
+                            otherRadius = (if (largeControls) 13.dp else 10.dp) * ARTWORK_CORNER_SCALE,
                         ),
                 ) {
                     ChapterCover(
@@ -1639,7 +1415,7 @@ private fun PlayerPane(
             var titleOverflows by remember(npTitle) { mutableStateOf(false) }
             val titleStyle = MaterialTheme.typography.titleLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight(750),
+                fontWeight = ru.e1173.nookast.designsystem.NookPlayerType.titleWeight,
                 textAlign = if (alignMetadataStart) TextAlign.Start else TextAlign.Center,
             )
             if (titleOverflows) {
@@ -1648,9 +1424,9 @@ private fun PlayerPane(
                     modifier = Modifier
                         .fillMaxWidth()
                         .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2_000, repeatDelayMillis = 2_500)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                         .clickable(onClick = onOpenPodcast),
-                    style = titleStyle.copy(fontSize = titleMin, textAlign = TextAlign.Start),
+                    style = titleStyle.merge(ru.e1173.nookast.designsystem.NookPlayerType.fitted(titleMin)).copy(textAlign = TextAlign.Start),
                     maxLines = 1,
                 )
             } else {
@@ -1658,7 +1434,7 @@ private fun PlayerPane(
                     npTitle,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                         .clickable(onClick = onOpenPodcast),
                     style = titleStyle,
                     maxLines = 1,
@@ -1676,18 +1452,12 @@ private fun PlayerPane(
                 state.podcastName,
                 modifier = Modifier
                     .then(if (alignMetadataStart) Modifier.fillMaxWidth() else Modifier)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                     .clickable(onClick = onOpenPodcast),
                 style = when {
-                    largeControls -> MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 22.67.sp,
-                        lineHeight = 28.sp,
-                    )
-                    alignMetadataStart -> MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 17.sp,
-                        lineHeight = 23.sp,
-                    )
-                    else -> MaterialTheme.typography.bodyLarge.copy(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight(550))
+                    largeControls -> MaterialTheme.typography.titleLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.subtitleLarge)
+                    alignMetadataStart -> MaterialTheme.typography.bodyLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.subtitleStart)
+                    else -> MaterialTheme.typography.bodyLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.subtitle)
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = if (alignMetadataStart) TextAlign.Start else TextAlign.Center,
@@ -1763,7 +1533,11 @@ private fun PlayerPane(
                             Popup(
                                 alignment = Alignment.BottomCenter,
                                 offset = with(density) {
-                                    androidx.compose.ui.unit.IntOffset(0, -(32.dp * componentScale).roundToPx())
+                                    // The card keeps its place; the window grows by the shadow's room below it.
+                                    androidx.compose.ui.unit.IntOffset(
+                                        0,
+                                        -(32.dp * componentScale).roundToPx() + ru.e1173.nookast.designsystem.FloatingShadowMargin.Bottom.roundToPx(),
+                                    )
                                 },
                                 onDismissRequest = { onSourceStatusExpandedChange(false) },
                                 properties = PopupProperties(focusable = true),
@@ -1774,11 +1548,19 @@ private fun PlayerPane(
                                 androidx.compose.animation.AnimatedVisibility(
                                     visibleState = appear,
                                     enter = scaleIn(
-                                        androidx.compose.animation.core.spring(dampingRatio = 0.80f, stiffness = 340f),
+                                        ru.e1173.nookast.designsystem.NookMotion.spatial(),
                                         initialScale = 0.88f,
                                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
-                                    ) + slideInVertically(androidx.compose.animation.core.spring(dampingRatio = 0.80f, stiffness = 340f)) { with(density) { 24.dp.roundToPx() } } + fadeIn(tween(160)),
+                                    ) + slideInVertically(ru.e1173.nookast.designsystem.NookMotion.spatial()) { with(density) { 24.dp.roundToPx() } } + fadeIn(ru.e1173.nookast.designsystem.NookMotion.fast()),
                                 ) {
+                                    androidx.compose.foundation.layout.Box(
+                                        Modifier.padding(
+                                            start = ru.e1173.nookast.designsystem.FloatingShadowMargin.Side,
+                                            end = ru.e1173.nookast.designsystem.FloatingShadowMargin.Side,
+                                            top = ru.e1173.nookast.designsystem.FloatingShadowMargin.Top,
+                                            bottom = ru.e1173.nookast.designsystem.FloatingShadowMargin.Bottom,
+                                        ),
+                                    ) {
                                     SourceStatusPopover(
                                         state = state,
                                         wide = alignMetadataStart,
@@ -1787,6 +1569,7 @@ private fun PlayerPane(
                                         onDownloadToServer = onDownloadToServer,
                                         pointerAtBottomStart = true,
                                     )
+                                    }
                                 }
                                 }
                             }
@@ -1958,7 +1741,7 @@ private fun DescriptionPane(
         }
         // The text scrolls under the frosted header, which turns to glass once it does (user, 29.10.2026).
         val scroll = rememberScrollState()
-        val scrolled = scroll.value > 0
+        val scrolled by remember { androidx.compose.runtime.derivedStateOf { scroll.value > 0 } }
         androidx.compose.runtime.LaunchedEffect(scrolled) { onScrolledChange(scrolled) }
         Column(
             modifier = Modifier
@@ -1987,7 +1770,7 @@ private fun DescriptionPane(
                 Surface(
                     onClick = onOpenPodcast, // Stitch §3.1: the summary leads to the podcast page
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(13.dp),
+                    shape = ru.e1173.nookast.designsystem.NookShapes.m,
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
@@ -2009,8 +1792,7 @@ private fun DescriptionPane(
                         Column(Modifier.weight(1f).padding(top = 9.dp, end = 10.dp)) {
                             Text(
                                 currentEntry?.podcastName.orEmpty(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -2045,8 +1827,7 @@ private fun DescriptionPane(
                 currentEntry?.episodeTitle?.takeIf(String::isNotBlank)?.let { title ->
                     Text(
                         cleanEpisodeTitle(title),
-                        style = if (largeControls) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = (if (largeControls) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium).merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -2079,11 +1860,11 @@ private fun DescriptionPane(
                     Spacer(Modifier.height(if (compact) 10.dp else 7.dp))
                 }
                 val episodeStyle = if (largeControls) {
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 18.sp, lineHeight = 25.sp)
+                    MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.descriptionLarge)
                 } else if (compact) {
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp)
+                    MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.description)
                 } else {
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp)
+                    MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.descriptionWide)
                 }
                 NookExpandable(
                     collapsedHeight = descriptionLinesHeight(episodeStyle, EPISODE_DESCRIPTION_LINES),
@@ -2128,9 +1909,7 @@ private fun DescriptionPane(
                     Column(Modifier.weight(1f)) {
                         Text(
                             podcastDetails?.name.orEmpty().ifBlank { currentEntry?.podcastName.orEmpty() },
-                            style = if (largeControls) MaterialTheme.typography.titleLarge
-                            else MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = (if (largeControls) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium).merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                         )
                         podcastDetails?.author?.takeIf(String::isNotBlank)?.let {
                             Text(
@@ -2147,11 +1926,11 @@ private fun DescriptionPane(
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 } else {
                     val podcastStyle = if (largeControls) {
-                        MaterialTheme.typography.bodyMedium.copy(fontSize = 18.sp, lineHeight = 25.sp)
+                        MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.descriptionLarge)
                     } else if (compact) {
-                        MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp)
+                        MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.description)
                     } else {
-                        MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp)
+                        MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.descriptionWide)
                     }
                     NookExpandable(
                         collapsedHeight = descriptionLinesHeight(podcastStyle, PODCAST_DESCRIPTION_LINES),
@@ -2174,7 +1953,7 @@ private fun DescriptionPane(
                     ) {
                         podcastDetails.categories.forEach { category ->
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
+                                shape = ru.e1173.nookast.designsystem.NookShapes.s,
                                 color = MaterialTheme.colorScheme.primaryContainer,
                             ) {
                                 Text(
@@ -2242,15 +2021,15 @@ internal fun ChapterList(
     val currentLabel = stringResource(R.string.current_chapter)
     val currentIndex = chapters.indexOfLast { it.positionMs <= positionMs }
     val textStyle = if (largeControls) {
-        MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 24.sp)
+        MaterialTheme.typography.bodyLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.chaptersLarge)
     } else {
-        MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 20.sp)
+        MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.chapters)
     }
     // The times form one right-aligned column (user, 31.10.2026: 0:00 and 14:23 started the titles at
     // different places), as wide as the longest time.
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val timeStyle = textStyle.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.SemiBold)
+    val timeStyle = textStyle.merge(ru.e1173.nookast.designsystem.NookPlayerType.chapterTime)
     val timeWidth = remember(chapters, timeStyle) {
         val widest = chapters.maxOfOrNull { measurer.measure(formatPlaybackTime(it.positionMs), timeStyle).size.width } ?: 0
         with(density) { widest.toDp() }
@@ -2262,7 +2041,7 @@ internal fun ChapterList(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(ru.e1173.nookast.designsystem.NookShapes.s)
                     .background(if (current) colors.tintContainer else Color.Transparent)
                     .clickable(role = Role.Button) { onSelect(chapter.positionMs) }
                     .semantics { if (current) stateDescription = currentLabel }
@@ -2273,18 +2052,17 @@ internal fun ChapterList(
             ) {
                 Text(
                     formatPlaybackTime(chapter.positionMs),
-                    style = textStyle.copy(fontFeatureSettings = "tnum"),
+                    style = textStyle.merge(ru.e1173.nookast.designsystem.NookPlayerType.chapterTime),
                     modifier = Modifier.width(timeWidth),
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                    color = colors.accent,
-                    fontWeight = FontWeight.SemiBold,
+                    color = colors.accentText,
                 )
                 Text(
                     chapter.label,
                     modifier = Modifier.weight(1f),
                     style = textStyle,
                     color = if (current) colors.textPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = ru.e1173.nookast.designsystem.NookPlayerType.chapterWeight(current),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2302,13 +2080,7 @@ private fun DetailCard(
     compactBottomPadding: Dp = 20.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = RoundedCornerShape(13.dp),
-    ) {
+    Box(Modifier.nookCard()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -2330,23 +2102,17 @@ private fun DetailCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     title,
-                    style = if (largeControls) {
-                        MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 23.sp)
-                    } else {
-                        MaterialTheme.typography.titleMedium
-                    },
-                    fontWeight = FontWeight.Bold,
+                    style = if (largeControls) MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.cardTitle) else MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                 )
                 if (badge != null) {
                     // A quiet capsule, like the secondary tags of Apple's apps.
                     Text(
                         badge,
                         modifier = Modifier
-                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f), RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f), ru.e1173.nookast.designsystem.NookShapes.full)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = if (largeControls) 13.sp else 11.sp),
+                        style = MaterialTheme.typography.labelSmall.merge(if (largeControls) ru.e1173.nookast.designsystem.NookPlayerType.cardBadgeLarge else ru.e1173.nookast.designsystem.NookPlayerType.cardBadge),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                     )
                 }
@@ -2366,9 +2132,9 @@ private fun StatChip(
 ) {
     Surface(
         modifier = modifier.then(
-            if (onClick == null) Modifier else Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick),
+            if (onClick == null) Modifier else Modifier.clip(ru.e1173.nookast.designsystem.NookShapes.s).clickable(onClick = onClick),
         ),
-        shape = RoundedCornerShape(10.dp),
+        shape = ru.e1173.nookast.designsystem.NookShapes.s,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
@@ -2535,12 +2301,7 @@ private fun UpNextPanel(
             item(key = "up-next-heading") {
                 Text(
                     stringResource(R.string.queue_title),
-                    style = if (largeControls) {
-                        MaterialTheme.typography.headlineSmall.copy(fontSize = 23.sp, lineHeight = 28.sp)
-                    } else {
-                        MaterialTheme.typography.titleLarge
-                    },
-                    fontWeight = FontWeight.Bold,
+                    style = if (largeControls) MaterialTheme.typography.headlineSmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.queueTitleLarge) else MaterialTheme.typography.titleLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                     modifier = Modifier.padding(
                         start = if (largeControls) 1.33.dp else 3.dp,
                         end = 3.dp,
@@ -2551,7 +2312,7 @@ private fun UpNextPanel(
             }
         }
         if (entries.isEmpty()) {
-            item { Text(stringResource(R.string.queue_empty), Modifier.padding(12.dp)) }
+            item { ru.e1173.nookast.designsystem.NookEmptyState(stringResource(R.string.queue_empty), message = stringResource(R.string.empty_queue_message)) }
         }
         itemsIndexed(visualEntries, key = { _, entry -> entry.episodeId }) { index, entry ->
             val dragging = draggedEpisodeId == entry.episodeId
@@ -2662,6 +2423,7 @@ private fun UpNextRow(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var swipeOffset by remember(entry.episodeId) { mutableFloatStateOf(0f) }
+    val swipeHaptics = ru.e1173.nookast.designsystem.rememberNookHaptics()
     val hapticFeedback = LocalHapticFeedback.current
     val density = LocalDensity.current
     val revealPx = with(density) { 88.dp.toPx() }
@@ -2691,7 +2453,7 @@ private fun UpNextRow(
             else -> 16.dp
         }
     }
-    val rowShape = RoundedCornerShape(if (largeControls) 21.dp else 16.dp)
+    val rowShape = RoundedCornerShape(if (largeControls) ru.e1173.nookast.designsystem.NookShapes.xlRadius else ru.e1173.nookast.designsystem.NookShapes.lRadius)
     fun confirmSwipeAction(action: QueueSwipeAction) {
         when (action) {
             QueueSwipeAction.NONE -> Unit
@@ -2746,11 +2508,14 @@ private fun UpNextRow(
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
                             val candidate = (swipeOffset + dragAmount).coerceIn(-revealPx, revealPx)
+                            val previous = swipeOffset
                             swipeOffset = when {
                                 candidate > 0f && swipeStartAction == QueueSwipeAction.NONE -> 0f
                                 candidate < 0f && swipeEndAction == QueueSwipeAction.NONE -> 0f
                                 else -> candidate
                             }
+                            // Crossing the point where letting go acts (design audit 4.4).
+                            if ((kotlin.math.abs(previous) > revealPx * 0.42f) != (kotlin.math.abs(swipeOffset) > revealPx * 0.42f)) swipeHaptics.threshold()
                         },
                     )
                 },
@@ -2814,9 +2579,9 @@ private fun UpNextRow(
                 modifier = Modifier.weight(1f),
             )
             Box {
-                IconButton(
-                    onClick = { menuExpanded = true },
-                    modifier = Modifier
+                // A grip, not a disc (DEC-059): drag to reorder, tap for the row menu.
+                Box(
+                    Modifier
                         .size(width = reorderHandleSize * 0.8f, height = reorderHandleSize)
                         .pointerInput(entry.episodeId) {
                             detectDragGestures(
@@ -2832,7 +2597,10 @@ private fun UpNextRow(
                                 },
                             )
                         }
+                        // No ripple on a grip: the menu that opens is the feedback.
+                        .clickable(interactionSource = null, indication = null, role = androidx.compose.ui.semantics.Role.Button) { menuExpanded = true }
                         .semantics { contentDescription = reorderDescription },
+                    contentAlignment = Alignment.Center,
                 ) {
                     DragHandleIcon(
                         if (largeControls) {
@@ -2842,41 +2610,18 @@ private fun UpNextRow(
                         },
                     )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-                    containerColor = ru.e1173.nookast.designsystem.LocalNookastColors.current.surface,
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, ru.e1173.nookast.designsystem.LocalNookastColors.current.surfaceOutline),
-                ) { ru.e1173.nookast.designsystem.InterfaceScaled {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.move_up)) },
-                        enabled = canMoveUp,
-                        onClick = { menuExpanded = false; onMoveUp() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.move_down)) },
-                        enabled = canMoveDown,
-                        onClick = { menuExpanded = false; onMoveDown() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.remove_from_queue)) },
-                        onClick = { menuExpanded = false; onRemove() },
-                    )
+                ru.e1173.nookast.designsystem.NookMenu(menuExpanded, { menuExpanded = false }) {
+                    ru.e1173.nookast.designsystem.NookMenuItem(stringResource(R.string.move_up), { menuExpanded = false; onMoveUp() }, enabled = canMoveUp)
+                    ru.e1173.nookast.designsystem.NookMenuItem(stringResource(R.string.move_down), { menuExpanded = false; onMoveDown() }, enabled = canMoveDown)
+                    ru.e1173.nookast.designsystem.NookMenuItem(stringResource(R.string.remove_from_queue), { menuExpanded = false; onRemove() }, destructive = true)
                     if (downloadState == EpisodeDownloadState.DOWNLOADED) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.delete_download)) },
-                            onClick = { menuExpanded = false; onDeleteDownload() },
-                        )
+                        ru.e1173.nookast.designsystem.NookMenuItem(stringResource(R.string.delete_download), { menuExpanded = false; onDeleteDownload() }, destructive = true)
                     } else if (downloadState == EpisodeDownloadState.NOT_DOWNLOADED ||
                         downloadState == EpisodeDownloadState.FAILED
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.download_episode)) },
-                            onClick = { menuExpanded = false; onDownload() },
-                        )
+                        ru.e1173.nookast.designsystem.NookMenuItem(stringResource(R.string.download_episode), { menuExpanded = false; onDownload() })
                     }
-                } }
+                }
             }
         }
         }
@@ -2945,7 +2690,6 @@ private fun QueueMetadataLine(
     compact: Boolean,
     largeControls: Boolean,
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    fontWeight: FontWeight = FontWeight.Normal,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -2953,10 +2697,9 @@ private fun QueueMetadataLine(
     ) {
         Text(
             text,
-            style = if (largeControls) MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp)
-            else MaterialTheme.typography.labelSmall,
+            style = (if (largeControls) MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.metaLarge) else MaterialTheme.typography.labelSmall)
+            .merge(ru.e1173.nookast.designsystem.NookPlayerType.regular),
             color = color,
-            fontWeight = fontWeight,
             maxLines = 1,
         )
         if (downloaded) {
@@ -3053,7 +2796,7 @@ private fun BoxScope.ArtworkLayers(
         val bitmap = rememberArtworkBitmap(url, reloadKey, fallbackUrl, decodePx)
         val artworkAlpha by animateFloatAsState(
             targetValue = if (bitmap == null) 0f else 1f,
-            animationSpec = tween(260),
+            animationSpec = ru.e1173.nookast.designsystem.NookMotion.standard(), // design audit 5.4
             label = "artworkFadeIn",
         )
         if (LocalInspectionMode.current && url.startsWith(PREVIEW_ARTWORK_PREFIX)) {
@@ -3096,8 +2839,7 @@ private fun BoxScope.ArtworkLayers(
                         seconds,
                     ),
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
                     textAlign = TextAlign.Center,
                 )
             }
@@ -3121,21 +2863,16 @@ private fun BoxScope.ArtworkLayers(
 @Composable
 private fun PreviewArtwork(title: String, modifier: Modifier = Modifier) {
     val variant = title.hashCode().ushr(3) % 4
-    val background = when (variant) {
-        0 -> listOf(Color(0xFF7546D8), Color(0xFFFF8A72))
-        1 -> listOf(Color(0xFF1266C9), Color(0xFFFFB15E))
-        2 -> listOf(Color(0xFF332375), Color(0xFFF19A5F))
-        else -> listOf(Color(0xFF0D787A), Color(0xFF68BE8B))
-    }
+    val background = ru.e1173.nookast.designsystem.NookFixedColors.PreviewBackgrounds[variant]
     Canvas(modifier) {
         drawRect(Brush.linearGradient(background))
         drawCircle(
-            color = Color(0xFFFFB4CA),
+            color = ru.e1173.nookast.designsystem.NookFixedColors.PreviewMoon,
             radius = size.minDimension * 0.42f,
             center = Offset(size.width * 0.72f, size.height * 0.24f),
         )
         drawCircle(
-            color = Color(0xFFFF7654),
+            color = ru.e1173.nookast.designsystem.NookFixedColors.PreviewSun,
             radius = size.minDimension * 0.48f,
             center = Offset(size.width * 0.67f, size.height * 0.93f),
         )
@@ -3168,14 +2905,14 @@ private fun PreviewArtwork(title: String, modifier: Modifier = Modifier) {
             lineTo(size.width * 0.49f, size.height * 0.87f)
             close()
         }
-        drawPath(silhouette, Color(0xFF2E1B69))
+        drawPath(silhouette, ru.e1173.nookast.designsystem.NookFixedColors.PreviewSilhouette)
         drawCircle(
-            color = Color(0xFFFFA2BC),
+            color = ru.e1173.nookast.designsystem.NookFixedColors.PreviewMicrophone,
             radius = size.minDimension * 0.035f,
             center = Offset(size.width * 0.55f, size.height * 0.55f),
         )
         drawLine(
-            color = Color(0xFFFFA2BC),
+            color = ru.e1173.nookast.designsystem.NookFixedColors.PreviewMicrophone,
             start = Offset(size.width * 0.55f, size.height * 0.58f),
             end = Offset(size.width * 0.54f, size.height * 0.70f),
             strokeWidth = size.minDimension * 0.018f,
@@ -3190,7 +2927,12 @@ private fun PreviewArtwork(title: String, modifier: Modifier = Modifier) {
  * Settings → Appearance returns the plain background.
  */
 @Composable
-internal fun ArtworkTintBackdrop(url: String, modifier: Modifier = Modifier) {
+internal fun ArtworkTintBackdrop(
+    url: String,
+    modifier: Modifier = Modifier,
+    /** In the player: whether it plays, so the two lights drift (design audit 5.2); null elsewhere. */
+    living: Boolean? = null,
+) {
     if (LocalInspectionMode.current) return
     val preferences: ru.e1173.nookast.preferences.AppPreferencesViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel()
@@ -3209,30 +2951,33 @@ internal fun ArtworkTintBackdrop(url: String, modifier: Modifier = Modifier) {
     val strength = if (dark) 0.30f else 0.20f
     val first by androidx.compose.animation.animateColorAsState(
         (glow?.get(0) ?: Color.Transparent).copy(alpha = if (glow == null) 0f else strength),
-        animationSpec = tween(600),
+        animationSpec = ru.e1173.nookast.designsystem.NookMotion.slow(),
         label = "tintFirst",
     )
     val second by androidx.compose.animation.animateColorAsState(
         (glow?.get(1) ?: Color.Transparent).copy(alpha = if (glow == null) 0f else strength * 0.8f),
-        animationSpec = tween(600),
+        animationSpec = ru.e1173.nookast.designsystem.NookMotion.slow(),
         label = "tintSecond",
     )
+    val drift = ru.e1173.nookast.designsystem.rememberBackdropDrift(active = living == true)
     Box(
         modifier.drawBehind {
+            val t = drift.value
             drawRect(
                 Brush.radialGradient(
                     listOf(first, Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.15f, 0f),
-                    radius = size.maxDimension * 0.55f,
+                    center = driftedCenter(androidx.compose.ui.geometry.Offset(size.width * 0.15f, 0f), t, 47f, 53f),
+                    radius = ru.e1173.nookast.designsystem.driftedRadius(size.maxDimension * 0.55f, t, 41f),
                 ),
             )
             drawRect(
                 Brush.radialGradient(
                     listOf(second, Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.08f),
-                    radius = size.maxDimension * 0.45f,
+                    center = driftedCenter(androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.08f), t, 59f, 43f),
+                    radius = ru.e1173.nookast.designsystem.driftedRadius(size.maxDimension * 0.45f, t, 37f),
                 ),
             )
+            if (living != null) drawBackdropGrain()
         },
     )
 }
@@ -3291,36 +3036,30 @@ private fun ArtworkInitialPlaceholder(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = inset, vertical = inset),
-            shape = RoundedCornerShape(if (compact) 5.dp else 8.dp),
-            color = Color(0x660C0918),
+            shape = RoundedCornerShape(if (compact) ru.e1173.nookast.designsystem.NookShapes.xsRadius else ru.e1173.nookast.designsystem.NookShapes.sRadius),
+            color = ru.e1173.nookast.designsystem.NookFixedColors.CoverCaption,
             contentColor = Color.White,
         ) {
             Text(
                 text = initial,
                 modifier = Modifier.padding(horizontal = if (compact) 4.dp else 7.dp, vertical = vertical),
-                style = if (compact) MaterialTheme.typography.labelSmall
-                else MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
+                style = (if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.titleMedium).merge(ru.e1173.nookast.designsystem.NookPlayerType.medium),
             )
         }
     }
 }
 
 private fun placeholderBrush(title: String): Brush {
-    val colors = listOf(
-        Color(0xFF873F72) to Color(0xFFD383AD),
-        Color(0xFF174A8D) to Color(0xFF7C82DD),
-        Color(0xFF3D775C) to Color(0xFF94AD70),
-        Color(0xFFBF5D35) to Color(0xFFF0AE5A),
-        Color(0xFF146F80) to Color(0xFF64C4BB),
-        Color(0xFF7757D6) to Color(0xFFF07186),
-    )
+    val colors = ru.e1173.nookast.designsystem.NookFixedColors.PlaceholderGradients
     val pair = colors[title.hashCode().ushr(4) % colors.size]
     return Brush.linearGradient(listOf(pair.first, pair.second))
 }
 
 private fun criticalWarningSeconds(state: PlaybackUiState): Int? {
     if (state.isLocalSource || state.streamReachability != StreamReachability.UNAVAILABLE) return null
+    // Only a stream that plays and has something left in the buffer can «stop in N seconds»: at a start
+    // without a connection nothing is playing yet (user, 11.11.2026: the warning showed then).
+    if (!state.isPlaying || state.bufferedAheadMs <= 0L) return null
     if (state.bufferedAheadMs >= 60_000L) return null
     return ceil(state.bufferedAheadMs.coerceAtLeast(1L) / 1_000.0).toInt().coerceAtLeast(1)
 }
@@ -3350,79 +3089,9 @@ private fun formatPublishedDate(value: String, locale: Locale): String = runCatc
 }.getOrDefault(value)
 
 @Composable
-internal fun UpNextIcon(modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.078f
-        val startX = size.width * 0.08f
-        val endX = size.width * 0.42f
-        listOf(0.27f, 0.5f, 0.73f).forEach { y ->
-            drawLine(
-                color = color,
-                start = Offset(startX, size.height * y),
-                end = Offset(endX, size.height * y),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
-            )
-        }
-        val triangle = Path().apply {
-            moveTo(size.width * 0.56f, size.height * 0.19f)
-            lineTo(size.width * 0.90f, size.height * 0.5f)
-            lineTo(size.width * 0.56f, size.height * 0.81f)
-            close()
-        }
-        drawPath(triangle, color)
-    }
-}
-
-@Composable
-internal fun SyncAntennaIcon(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.07f
-        fun sideArc(left: Boolean, inset: Float) {
-            val arcSize = size.minDimension * (1f - inset * 2f)
-            drawArc(
-                color = color,
-                startAngle = if (left) 135f else 315f,
-                sweepAngle = 90f,
-                useCenter = false,
-                topLeft = Offset(size.width * inset, size.height * inset),
-                size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                style = Stroke(stroke, cap = StrokeCap.Round),
-            )
-        }
-        sideArc(left = true, inset = 0.08f)
-        sideArc(left = false, inset = 0.08f)
-        sideArc(left = true, inset = 0.27f)
-        sideArc(left = false, inset = 0.27f)
-        drawCircle(
-            color = color,
-            radius = size.minDimension * 0.07f,
-            center = Offset(size.width * 0.5f, size.height * 0.51f),
-        )
-        val mast = Path().apply {
-            moveTo(size.width * 0.5f, size.height * 0.56f)
-            lineTo(size.width * 0.35f, size.height * 0.94f)
-            lineTo(size.width * 0.65f, size.height * 0.94f)
-            close()
-        }
-        drawPath(mast, color)
-    }
-}
-
-@Composable
 private fun DragHandleIcon(modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier) {
-        val radius = size.minDimension * 0.095f
-        listOf(0.32f, 0.68f).forEach { x ->
-            listOf(0.2f, 0.5f, 0.8f).forEach { y ->
-                drawCircle(color, radius, Offset(size.width * x, size.height * y))
-            }
-        }
-    }
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Grip, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -3430,13 +3099,7 @@ internal fun DownloadGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.1f
-        drawLine(color, Offset(size.width * 0.5f, size.height * 0.12f), Offset(size.width * 0.5f, size.height * 0.62f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.28f, size.height * 0.43f), Offset(size.width * 0.5f, size.height * 0.66f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.72f, size.height * 0.43f), Offset(size.width * 0.5f, size.height * 0.66f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.18f, size.height * 0.86f), Offset(size.width * 0.82f, size.height * 0.86f), stroke, StrokeCap.Round)
-    }
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Download, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -3444,32 +3107,7 @@ internal fun DeleteDownloadGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.095f
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.27f, size.height * 0.28f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.46f, size.height * 0.58f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.minDimension * 0.07f),
-            style = Stroke(stroke, cap = StrokeCap.Round),
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.20f, size.height * 0.25f),
-            Offset(size.width * 0.80f, size.height * 0.25f),
-            stroke,
-            StrokeCap.Round,
-        )
-        drawLine(
-            color,
-            Offset(size.width * 0.39f, size.height * 0.12f),
-            Offset(size.width * 0.61f, size.height * 0.12f),
-            stroke,
-            StrokeCap.Round,
-        )
-        drawLine(color, Offset(size.width * 0.41f, size.height * 0.42f), Offset(size.width * 0.41f, size.height * 0.72f), stroke * 0.78f, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.59f, size.height * 0.42f), Offset(size.width * 0.59f, size.height * 0.72f), stroke * 0.78f, StrokeCap.Round)
-    }
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Trash, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -3477,11 +3115,8 @@ private fun RemoveGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.11f
-        drawLine(color, Offset(size.width * 0.20f, size.height * 0.20f), Offset(size.width * 0.80f, size.height * 0.80f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.80f, size.height * 0.20f), Offset(size.width * 0.20f, size.height * 0.80f), stroke, StrokeCap.Round)
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Close, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
@@ -3489,25 +3124,15 @@ private fun CheckGlyph(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.12f
-        drawLine(color, Offset(size.width * 0.16f, size.height * 0.54f), Offset(size.width * 0.42f, size.height * 0.78f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * 0.42f, size.height * 0.78f), Offset(size.width * 0.86f, size.height * 0.24f), stroke, StrokeCap.Round)
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.Check, contentDescription = null, tint = color, modifier = modifier)
 }
 
 @Composable
 private fun ListGlyph(modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurface
-    Canvas(modifier) {
-        val stroke = 1.7.dp.toPx()
-        val start = size.width * 0.08f
-        val end = size.width * 0.92f
-        listOf(0.22f, 0.5f, 0.78f).forEach { fraction ->
-            val y = size.height * fraction
-            drawLine(color, Offset(start, y), Offset(end, y), stroke, StrokeCap.Round)
-        }
-    }
+    // Drawn from NookIcons (design audit 3.7).
+    androidx.compose.material3.Icon(ru.e1173.nookast.designsystem.NookIcons.ListView, contentDescription = null, tint = color, modifier = modifier)
 }
 
 /**
@@ -3518,8 +3143,10 @@ private fun ListGlyph(modifier: Modifier = Modifier) {
 private fun ServerCopySection(state: PlaybackUiState, onDownloadToServer: () -> Unit) {
     if (state.isLocalSource || state.currentEpisodeId == null) return
     val progress = state.serverDownload
-    val originUnavailable = state.streamReachability == StreamReachability.UNAVAILABLE ||
-        state.isUsingPinePodsFallback || state.originStalled
+    // The server must answer for a copy on it to help (user, 11.11.2026: the offer showed while the same
+    // card said the server was unreachable).
+    val serverReachable = state.streamReachability != StreamReachability.UNAVAILABLE
+    val originUnavailable = serverReachable && (state.isUsingPinePodsFallback || state.originStalled)
     val textStyle = MaterialTheme.typography.bodySmall
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -3536,11 +3163,11 @@ private fun ServerCopySection(state: PlaybackUiState, onDownloadToServer: () -> 
             progress == ServerDownloadProgress.Disabled -> Text(stringResource(R.string.server_copy_disabled), style = textStyle, color = muted)
             progress == ServerDownloadProgress.Failed -> {
                 Text(stringResource(R.string.server_copy_failed), style = textStyle, color = muted)
-                FilledTonalButton(onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_retry)) }
+                if (serverReachable) NookButton(variant = NookButtonVariant.Tonal, onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_retry)) }
             }
             originUnavailable && !state.isOnServer -> {
                 Text(stringResource(R.string.server_copy_offer_hint), style = textStyle, color = muted)
-                FilledTonalButton(onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_offer)) }
+                NookButton(variant = NookButtonVariant.Tonal, onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_offer)) }
             }
         }
     }

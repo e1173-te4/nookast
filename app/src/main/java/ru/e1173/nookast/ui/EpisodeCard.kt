@@ -1,5 +1,11 @@
 package ru.e1173.nookast.ui
 
+import ru.e1173.nookast.designsystem.leavingTitle
+import ru.e1173.nookast.designsystem.trackLargeTitle
+import ru.e1173.nookast.designsystem.trackHeaderBar
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.nookCard
+import ru.e1173.nookast.designsystem.focusRing
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -54,6 +60,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import ru.e1173.nookast.designsystem.nookElevation
 import ru.e1173.nookast.R
 import ru.e1173.nookast.data.local.QueueListEntry
 import ru.e1173.nookast.data.remote.PodcastDetails
@@ -120,6 +127,9 @@ internal fun EpisodeCardScreen(
     val artwork = entry.artworkUrl.orEmpty()
     val downloaded = downloadState == EpisodeDownloadState.DOWNLOADED
     val downloading = downloadState == EpisodeDownloadState.QUEUED || downloadState == EpisodeDownloadState.DOWNLOADING
+    // The bar's title follows the large one going under it (design audit 4.6).
+    val titleTracker = ru.e1173.nookast.designsystem.rememberHeaderTitleTracker()
+    val density = LocalDensity.current
     val scale = if (largeControls) 4f / 3f else 1f
     Box(modifier.fillMaxSize()) {
         run {
@@ -131,16 +141,18 @@ internal fun EpisodeCardScreen(
                 header = {
                     EpisodeCardBar(
                         title = title,
-                        showTitle = scroll.value > with(LocalDensity.current) { 300.dp.toPx() },
+                        showTitle = false,
+                        titleProgress = { titleTracker.progress(density) },
+                        modifier = Modifier.trackHeaderBar(titleTracker),
                         menu = buildList {
                             // Up Next lives here, not beside Play (user, 31.10.2026).
                             if (inQueue) {
-                                add(EpisodeMenuItem(stringResource(R.string.episode_card_remove_from_queue), actions.onRemoveFromQueue))
+                                add(EpisodeMenuItem(stringResource(R.string.episode_card_remove_from_queue), actions.onRemoveFromQueue, destructive = true))
                             } else {
                                 add(EpisodeMenuItem(stringResource(R.string.add_to_queue), actions.onAddToQueue))
                             }
                             when {
-                                downloaded -> add(EpisodeMenuItem(stringResource(R.string.delete_download), actions.onDeleteDownload))
+                                downloaded -> add(EpisodeMenuItem(stringResource(R.string.delete_download), actions.onDeleteDownload, destructive = true))
                                 downloading -> Unit
                                 else -> add(EpisodeMenuItem(stringResource(R.string.download_episode), actions.onDownload))
                             }
@@ -172,12 +184,12 @@ internal fun EpisodeCardScreen(
                         wide -> 240.dp
                         else -> 216.dp
                     }
-                    val coverShape = RoundedCornerShape(14.dp * ARTWORK_CORNER_SCALE)
+                    val coverShape = RoundedCornerShape(ru.e1173.nookast.designsystem.NookShapes.mRadius * ARTWORK_CORNER_SCALE)
                     // The picture of the chapter at the position, as on Now Playing (user, 31.10.2026).
                     Box(
                         Modifier
                             .padding(top = 12.dp)
-                            .shadow(24.dp, coverShape, ambientColor = Color.Black.copy(alpha = 0.35f), spotColor = Color.Black.copy(alpha = 0.45f))
+                            .then(Modifier.nookElevation(ru.e1173.nookast.designsystem.NookElevation.Level2, ru.e1173.nookast.designsystem.NookShapes.mRadius * ARTWORK_CORNER_SCALE))
                             .size(coverSize),
                     ) {
                         ChapterCover(
@@ -202,8 +214,7 @@ internal fun EpisodeCardScreen(
                                 episodeMetaLine(entry.episodeId, entry.episodeTitle.orEmpty(), entry.publishedAt).takeIf(String::isNotBlank),
                                 length,
                             ).joinToString(" • ").uppercase(),
-                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp * scale, letterSpacing = 0.06.em),
-                            fontWeight = FontWeight.SemiBold,
+                            style = ru.e1173.nookast.designsystem.NookType.label.scaled(scale).copy(letterSpacing = 0.06.em),
                             color = colors.textSecondary,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.weight(1f, fill = false),
@@ -213,18 +224,20 @@ internal fun EpisodeCardScreen(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         title,
-                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp * scale, lineHeight = 30.sp * scale, letterSpacing = (-0.01).em),
-                        fontWeight = FontWeight.Bold,
+                        style = ru.e1173.nookast.designsystem.NookType.heroTitle.scaled(scale).copy(letterSpacing = (-0.01).em),
                         color = colors.textPrimary,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.semantics { heading() },
+                        modifier = Modifier
+                            .trackLargeTitle(titleTracker)
+                            .leavingTitle { titleTracker.progress(density) }
+                            .semantics { heading() },
                     )
                     entry.podcastName?.takeIf(String::isNotBlank)?.let { podcast ->
                         Row(
                             Modifier
                                 .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .focusRing(RoundedCornerShape(8.dp))
+                                .clip(ru.e1173.nookast.designsystem.NookShapes.s)
+                                .focusRing(ru.e1173.nookast.designsystem.NookShapes.s)
                                 .clickable(role = Role.Button, onClick = actions.onOpenPodcast)
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -232,14 +245,13 @@ internal fun EpisodeCardScreen(
                         ) {
                             Text(
                                 podcast,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp * scale),
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.accent,
+                                style = ru.e1173.nookast.designsystem.NookType.barTitle.scaled(scale),
+                                color = colors.accentText,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
-                            Icon(NookIcons.ChevronRight, null, tint = colors.accent, modifier = Modifier.size(14.dp * scale))
+                            Icon(NookIcons.ChevronRight, null, tint = colors.accentText, modifier = Modifier.size(14.dp * scale))
                         }
                     }
                     Spacer(Modifier.height(18.dp))
@@ -259,7 +271,7 @@ internal fun EpisodeCardScreen(
                     }
                     EpisodeCardStatus(entry, isCurrent, positionMs, scale)
                     Spacer(Modifier.height(22.dp))
-                    val bodyStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp * scale, lineHeight = 24.sp * scale)
+                    val bodyStyle = ru.e1173.nookast.designsystem.NookType.body.scaled(scale)
                     // A feed that gives only "..." has no description to show.
                     if (remember(description) { descriptionWithoutTimestampList(normalizeDescriptionText(description)).any(Char::isLetterOrDigit) }) Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
                         NookExpandable(
@@ -316,60 +328,25 @@ internal fun EpisodeCardBar(
     showTitle: Boolean,
     menu: List<EpisodeMenuItem>,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** As the large title leaves under the bar (design audit 4.6). */
+    titleProgress: (() -> Float)? = null,
 ) {
-    val colors = LocalNookastColors.current
-    Box(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
-        BarButton(NookIcons.ChevronLeft, stringResource(R.string.back), onBack, Modifier.align(Alignment.CenterStart))
-        if (showTitle) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
-            )
-        }
-        if (menu.isNotEmpty()) Row(Modifier.align(Alignment.CenterEnd)) {
+    ru.e1173.nookast.designsystem.NookHeaderBar(
+        title = title,
+        showTitle = showTitle,
+        onBack = onBack,
+        backLabel = stringResource(R.string.back),
+        modifier = modifier,
+        titleProgress = titleProgress,
+        actions = if (menu.isEmpty()) null else ({
             var menuOpen by remember { mutableStateOf(false) }
             Box {
-                BarButton(null, stringResource(R.string.episode_more_actions), { menuOpen = true })
+                ru.e1173.nookast.designsystem.NookHeaderDisc(null, stringResource(R.string.episode_more_actions), { menuOpen = true })
                 EpisodeMenu(menu, menuOpen, onDismiss = { menuOpen = false })
             }
-        }
-    }
-}
-
-/** A round glass button of the bar: a 38 dp disc in a 48 dp target; no icon draws "⋯". */
-@Composable
-private fun BarButton(
-    icon: ImageVector?,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    tint: Color = LocalNookastColors.current.accent,
-) {
-    val colors = LocalNookastColors.current
-    Box(
-        modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .focusRing(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.size(38.dp).floatingDisc().background(colors.tintContainer, CircleShape), contentAlignment = Alignment.Center) {
-            if (icon != null) {
-                Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    repeat(3) { Box(Modifier.size(4.dp).background(tint, CircleShape)) }
-                }
-            }
-        }
-    }
+        }),
+    )
 }
 
 /**
@@ -385,7 +362,6 @@ private fun PlayCapsule(
     scale: Float,
     modifier: Modifier = Modifier,
 ) {
-    val colors = LocalNookastColors.current
     val listened = entry.listenDurationSeconds?.toInt() ?: 0
     val completed = entry.completed == true
     val playingNow = isCurrent && isPlaying
@@ -395,33 +371,14 @@ private fun PlayCapsule(
         completed -> stringResource(R.string.episode_card_play_again)
         else -> stringResource(R.string.play)
     }
-    Row(
-        modifier
-            .heightIn(min = 50.dp * scale)
-            .clip(CircleShape)
-            .background(colors.accent)
-            .focusRing(CircleShape)
-            .clickable(role = Role.Button, onClick = if (isCurrent) actions.onTogglePlayback else actions.onPlay)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            if (playingNow) NookIcons.Pause else NookIcons.Play,
-            contentDescription = null,
-            tint = colors.onAccent,
-            modifier = Modifier.size(18.dp * scale),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp * scale),
-            fontWeight = FontWeight.SemiBold,
-            color = colors.onAccent,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    ru.e1173.nookast.designsystem.NookButton(
+        text = label,
+        onClick = if (isCurrent) actions.onTogglePlayback else actions.onPlay,
+        modifier = modifier,
+        size = ru.e1173.nookast.designsystem.NookButtonSize.L,
+        icon = if (playingNow) NookIcons.Pause else NookIcons.Play,
+        scale = scale,
+    )
 }
 
 /**
@@ -440,7 +397,7 @@ private fun EpisodeCardStatus(
     val listenedMs = if (isCurrent) positionMs() else ((entry.listenDurationSeconds ?: 0.0) * 1_000).toLong()
     val started = durationMs > 0 && listenedMs > 0 && (isCurrent || entry.completed != true)
     if (!started) return
-    val style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp * scale)
+    val style = ru.e1173.nookast.designsystem.NookType.bodySmall.scaled(scale)
     val fraction by animateFloatAsState((listenedMs.toFloat() / durationMs).coerceIn(0f, 1f), label = "cardProgress")
     Row(
         Modifier.padding(top = 14.dp),
@@ -490,30 +447,14 @@ private fun RoundAction(
 internal fun CardSection(title: String, scale: Float, badge: String? = null, content: @Composable () -> Unit) {
     val colors = LocalNookastColors.current
     Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp * scale),
-                fontWeight = FontWeight.Bold,
-                color = colors.textPrimary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false).sectionHeading(),
-            )
-            badge?.let {
-                Text(it, style = MaterialTheme.typography.labelMedium, color = colors.textSecondary, maxLines = 1)
-            }
-        }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(colors.surface.compositeOver(colors.background).copy(alpha = 0.9f)),
-        ) { content() }
+        ru.e1173.nookast.designsystem.NookSectionTitle(
+            title,
+            Modifier.padding(bottom = 10.dp),
+            scale = scale,
+            maxLines = 2,
+            trailing = badge?.let { { Text(it, style = ru.e1173.nookast.designsystem.NookType.meta, color = colors.textSecondary, maxLines = 1) } },
+        )
+        Column(Modifier.fillMaxWidth().nookCard(radius = ru.e1173.nookast.designsystem.NookShapes.lRadius * scale)) { content() }
     }
 }
 
@@ -558,10 +499,10 @@ private fun EpisodeInformation(entry: QueueListEntry, downloaded: Boolean, scale
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(label, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale), color = colors.textSecondary)
+                Text(label, style = ru.e1173.nookast.designsystem.NookType.body.scaled(scale), color = colors.textSecondary)
                 Text(
                     value,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale),
+                    style = ru.e1173.nookast.designsystem.NookType.body.scaled(scale),
                     color = if (onClick != null) colors.accent else colors.textPrimary,
                     textAlign = TextAlign.End,
                     maxLines = 1,
@@ -607,12 +548,11 @@ private fun MoreEpisodes(podcast: String, episodes: List<QueueListEntry>, scale:
                         episode.durationSeconds?.takeIf { it > 0 }?.let { minutesLabel((it / 60).coerceAtLeast(1)) },
                     ).joinToString(" • ")
                     if (meta.isNotEmpty()) {
-                        Text(meta.uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp * scale), color = colors.textSecondary, maxLines = 1)
+                        Text(meta.uppercase(), style = ru.e1173.nookast.designsystem.NookType.meta.scaled(scale), color = colors.textSecondary, maxLines = 1)
                     }
                     Text(
                         cleanEpisodeTitle(episode.episodeTitle.orEmpty()),
-                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp * scale, lineHeight = 20.sp * scale),
-                        fontWeight = FontWeight.SemiBold,
+                        style = ru.e1173.nookast.designsystem.NookType.rowTitle.scaled(scale),
                         color = if (episode.completed == true) colors.textSecondary else colors.textPrimary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -626,7 +566,7 @@ private fun MoreEpisodes(podcast: String, episodes: List<QueueListEntry>, scale:
 
 private const val MORE_EPISODES = 5
 
-private val RectangleShapeless = RoundedCornerShape(0.dp)
+private val RectangleShapeless = androidx.compose.ui.graphics.RectangleShape
 
 /** The card of [episodeId] wired to the app: finds the episode, its podcast and what can be done. */
 @Composable

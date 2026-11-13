@@ -39,14 +39,7 @@
     <string name="pixel_size_format" translatable="false">%1$d×%2$d px</string>
     <string name="dp_size_format" translatable="false">%1$d×%2$d dp</string>
     <string name="density_format" translatable="false" tools:ignore="PluralsCandidate">%1$d dpi</string>
-    <string name="connected_home_title">Connected to PinePods</string>
-    <string name="sync_no_pending_changes">All local changes are synchronized</string>
-    <plurals name="sync_pending_changes">
-        <item quantity="one">%1$d change is waiting to sync</item>
-        <item quantity="other">%1$d changes are waiting to sync</item>
-    </plurals>
     <string name="refresh">Refresh</string>
-    <string name="disconnect">Disconnect</string>
     <string name="queue_title">Up next</string>
     <string name="tab_queue">Up next</string>
     <string name="dashboard_search">Search and add podcasts</string>
@@ -79,17 +72,7 @@
         <item quantity="one">%1$d episode</item>
         <item quantity="other">%1$d episodes</item>
     </plurals>
-    <string name="not_synced_yet">Not synchronized yet</string>
-    <string name="updated_at">Updated %1$s</string>
-    <string name="try_again">Try again</string>
     <string name="queue_empty">The queue is empty</string>
-    <string name="queue_empty_help">Episodes added in PinePods will appear here after synchronization.</string>
-    <plurals name="queue_more_items">
-        <item quantity="one">And %1$d more episode</item>
-        <item quantity="other">And %1$d more episodes</item>
-    </plurals>
-    <string name="unknown_episode">Episode %1$d</string>
-    <string name="duration_hours_minutes" translatable="false">%1$d:%2$02d</string>
     <string name="duration_minutes">%1$d min</string>
     <string name="duration_hours">%1$d h</string>
     <string name="duration_hours_minutes_words">%1$d h %2$d min</string>
@@ -100,8 +83,6 @@
     <string name="player_title">Player</string>
     <string name="play">Play</string>
     <string name="pause">Pause</string>
-    <string name="seek_back">−10 sec</string>
-    <string name="seek_forward">+30 sec</string>
     <string name="seek_back_seconds">Seek back %1$d seconds</string>
     <string name="seek_forward_seconds">Seek forward %1$d seconds</string>
     <string name="move_up">Up</string>
@@ -123,25 +104,15 @@
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
-    <string name="download">Download</string>
-    <string name="download_queued">Queued</string>
-    <string name="downloading">Loading…</string>
-    <string name="downloaded">Offline</string>
-    <string name="download_retry">Retry</string>
     <string name="crash_recovery_title">Nookast stopped unexpectedly</string>
     <string name="crash_recovery_help">A technical report was saved without your password or API key. Copy it before trying to start the app again.</string>
     <string name="crash_report_clip_label">Nookast crash report</string>
     <string name="copy_crash_report">Copy report</string>
     <string name="retry_start">Try again</string>
-    <string name="offline_stream_title">The media source is unavailable</string>
-    <string name="offline_stream_host">No response from %1$s.</string>
-    <string name="offline_buffer_remaining">Buffered audio remaining: about %1$s.</string>
-    <string name="offline_buffer_empty">The playback buffer is almost empty.</string>
     <string name="extended_diagnostics">Extended diagnostics</string>
     <string name="diagnostics_running">Checking…</string>
     <string name="diagnostic_available">%1$s — available, %2$d ms</string>
     <string name="diagnostic_unavailable">%1$s — unavailable</string>
-    <string name="pinepods_fallback_active">The podcast CDN is unavailable. PinePods is preparing a fallback copy.</string>
     <string name="playback_tab">Playback</string>
     <string name="description_tab">Description</string>
     <string name="collapse_player">Collapse player</string>
@@ -166,13 +137,24 @@
     <string name="episode_number_episode">E%1$d</string>
     <string name="episode_number_season">S%1$d</string>
     <string name="open_now_playing">Open player</string>
-    <string name="audio_processing_title">Audio processing</string>
-    <string name="audio_overall_gain">Overall gain</string>
-    <string name="audio_bass">Bass</string>
-    <string name="audio_speech_clarity">Speech clarity</string>
-    <string name="audio_decibel_value">%1$d dB</string>
-    <string name="audio_safe_limit">Safe limit without clipping</string>
-    <string name="audio_unavailable">Unavailable</string>
+    <string name="sound_this_podcast">This podcast</string>
+    <string name="sound_all_podcasts">All podcasts</string>
+    <string name="sound_volume">Volume boost</string>
+    <string name="sound_mono">Mono</string>
+    <string name="sound_even_loudness">Even loudness</string>
+    <string name="sound_even_loudness_hint">Brings up quiet shows and quiet voices</string>
+    <string name="sound_speech_clarity">Speech clarity</string>
+    <string name="sound_voice_depth">Voice depth</string>
+    <string name="sound_shorten_pauses">Shorten pauses</string>
+    <string name="sound_speaker_trim">On the built-in speaker</string>
+    <string name="sound_compare">Compare</string>
+    <string name="sound_compare_hint">Hold to hear the original sound</string>
+    <string name="sound_compare_on">Original sound</string>
+    <string name="sound_voice_light_rests">The voice light rests meanwhile</string>
+    <string name="sound_limiter_holding">The limiter is holding the peaks</string>
+    <string name="sound_unavailable">Not available for this episode</string>
+    <string name="sound_off">Off</string>
+    <string name="sound_plus_decibels">+%1$d dB</string>
     <string name="audio_bitrate_kbps">%1$d kbps</string>
     <string name="chapter_number">Chapter %1$d</string>
     <string name="current_episode">Now playing</string>
@@ -182,7 +164,7 @@
     <string name="source_rss_host">RSS · %1$s</string>
     <string name="source_pinepods_copy">PinePods server copy</string>
     <string name="server_copy_playing">Playing the copy stored on the PinePods server</string>
-    <string name="server_copy_offer_hint">The source cannot be reached from this device. The server can download the episode and stream it to you; the copy is deleted once the episode is played.</string>
+    <string name="server_copy_offer_hint">The episode cannot be reached from here, but the server can download it and stream it to you.</string>
     <string name="server_copy_offer">Download to server and play</string>
     <string name="server_copy_downloading">Downloading to the server: %1$d%%</string>
     <string name="server_copy_ready">Downloaded to the server</string>
@@ -318,7 +300,6 @@
     <string name="podcast_unsubscribe_full">Unsubscribe from podcast</string>
     <string name="podcast_action_error">Could not save the change. It is safe to try again.</string>
     <string name="podcast_hide_played">Hide played</string>
-    <string name="podcast_show_played">Show played</string>
     <string name="podcast_description">About this podcast</string>
     <string name="podcast_more">More</string>
     <string name="description_more">More</string>
@@ -338,7 +319,6 @@
     <string name="podcast_clear_selection_short">Clear</string>
     <string name="podcast_mark_played_short">Played</string>
     <string name="podcast_mark_unplayed_short">Unplayed</string>
-    <string name="podcast_details_loading">Loading podcast…</string>
     <string name="podcast_no_visible_episodes">No episodes match this view.</string>
     <string name="podcast_back_to_library">Back to podcasts</string>
     <string name="dashboard_error_no_cache">Could not load the dashboard. Check the server connection and try again.</string>
@@ -361,7 +341,6 @@
     <string name="dashboard_liked_empty">There are no liked episodes yet.</string>
     <string name="dashboard_downloaded">Downloaded</string>
     <string name="dashboard_downloaded_empty">There are no episodes ready offline on this device.</string>
-    <string name="dashboard_loading">Loading saved dashboard data…</string>
     <string name="dashboard_hours_minutes">%1$d h %2$d min</string>
     <string name="dashboard_minutes">%1$d min</string>
     <string name="podcast_add_to_queue">Add to Up Next</string>
@@ -371,6 +350,7 @@
     <string name="settings_queue_on_playback_description">Where to add an episode that was started outside Up Next.</string>
     <string name="settings_queue_manual_title">Add to Up Next button</string>
     <string name="settings_queue_manual_description">Where to place an episode added with the queue button.</string>
+    <string name="settings_queue_after_current">After current</string>
     <string name="settings_queue_first">First</string>
     <string name="settings_queue_last">Last</string>
     <string name="settings_queue_swipe_actions">QUEUE SWIPE ACTIONS</string>
@@ -497,6 +477,7 @@
     <string name="about_screen">Screen</string>
     <string name="about_screen_value">%1$d × %2$d dp · %3$d dpi</string>
     <string name="about_server">PinePods server</string>
+    <string name="about_server_version">Server version</string>
     <string name="about_build_debug">debug</string>
     <string name="about_build_release">release</string>
     <string name="diagnostics_journal_group">Journal</string>
@@ -719,4 +700,19 @@
     <string name="feed_problem_server_only">The feed works: this phone reads it. The server cannot update it: %1$s. New episodes reach the app from the feed itself; the server will not have them until it can read the feed.</string>
     <string name="feed_problem_private_address">The feed works: this phone reads it. Since 0.9.1 PinePods refuses feeds whose address leads into your home network, as here (a server on the same network, e.g. audiobookshelf). New episodes reach the app from the feed itself; for the server, give the feed a public address.</string>
     <string name="feed_problem">The server cannot update this feed: %1$s.</string>
+    <!-- Empty and failed states (design audit 5.6). -->
+    <string name="empty_feed_title">No new episodes</string>
+    <string name="empty_feed_message">New episodes of your podcasts will appear here.</string>
+    <string name="empty_feed_error_title">The feed didn\'t load</string>
+    <string name="empty_retry">Try again</string>
+    <string name="empty_queue_message">Add an episode with «Add to queue» in its menu.</string>
+    <string name="empty_library_title">No subscriptions yet</string>
+    <string name="empty_library_message">Find a podcast and subscribe: it will appear here.</string>
+    <string name="empty_find_podcast">Find a podcast</string>
+    <string name="empty_search_title">Find a podcast</string>
+    <string name="empty_search_nothing_message">Try another name or paste a link to the RSS feed.</string>
+    <string name="empty_search_failed_title">Search is unavailable</string>
+    <string name="settings_voice_light">Light follows the voice</string>
+    <string name="settings_voice_light_help">The glow of Play gently follows the loudness of speech</string>
+    <string name="settings_voice_light_paused">Has no effect while «Shorten pauses» is on</string>
 </resources>

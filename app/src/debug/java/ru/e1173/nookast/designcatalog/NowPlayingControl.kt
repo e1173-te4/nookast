@@ -1,4 +1,4 @@
-package ru.e1173.nookast.ui.designsystem.nowplaying
+package ru.e1173.nookast.designcatalog
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -465,7 +465,7 @@ private fun Artwork(
     colors: NowPlayingControlColors,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = ru.e1173.nookast.designsystem.NookShapes.l
     Box(
         modifier = modifier
             .shadow(7.dp, shape, ambientColor = Color(0x332A1559), spotColor = Color(0x332A1559))
@@ -749,9 +749,9 @@ private fun ChapterNavigator(
 ) {
     Box(
         modifier
-            .clip(RoundedCornerShape(13.dp))
+            .clip(ru.e1173.nookast.designsystem.NookShapes.m)
             .background(colors.surfaceSoft.copy(alpha = 0.78f))
-            .border(1.dp, colors.outline, RoundedCornerShape(13.dp)),
+            .border(1.dp, colors.outline, ru.e1173.nookast.designsystem.NookShapes.m),
     ) {
         CanvasAction(
             description = previousDescription,

@@ -15,7 +15,7 @@ internal data class PlayerSettings(
     val downloadWholeEpisodeOnPlayback: Boolean = false,
     val aheadCacheMegabytes: Int = PlaybackPreferences.DEFAULT_AHEAD_CACHE_MB,
     val playbackStartQueuePosition: QueueInsertionPosition = QueueInsertionPosition.FIRST,
-    val manualQueuePosition: QueueInsertionPosition = QueueInsertionPosition.LAST,
+    val manualQueuePosition: QueueInsertionPosition = QueueInsertionPosition.AFTER_CURRENT,
     val queueSwipeStartAction: QueueSwipeAction = QueueSwipeAction.DOWNLOAD_OR_DELETE,
     val queueSwipeEndAction: QueueSwipeAction = QueueSwipeAction.REMOVE_FROM_QUEUE,
     val autoAddStartedEpisodeToQueue: Boolean = true,

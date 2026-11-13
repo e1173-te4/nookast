@@ -70,6 +70,8 @@ data class DisplayPreferencesState(
     val episodeListViewMode: PodcastViewMode = PodcastViewMode.LIST,
     /** Now Playing washed with the cover colours (user trial 27.10.2026, switchable in Settings). */
     val artworkTint: Boolean = true,
+    /** «Light follows the voice» (design audit 5.8, DEC-058): off by default. */
+    val voiceLight: Boolean = false,
     /** «Immersion» (user, 29.10.2026): the morning, white-night and evening skies, each on its own. */
     val skyMorning: Boolean = true,
     val skyWhiteNights: Boolean = true,
@@ -190,6 +192,7 @@ private class AppDisplayPreferences(context: Context) {
             episodeListViewMode = preferences.getString(KEY_EPISODE_LIST_VIEW_MODE, null)
                 ?.let(PodcastViewMode::fromStoredValue) ?: PodcastViewMode.LIST,
             artworkTint = preferences.getBoolean(KEY_ARTWORK_TINT, true),
+            voiceLight = preferences.getBoolean(KEY_VOICE_LIGHT, false),
             // The one former switch is the default of all three.
             skyMorning = preferences.getBoolean(KEY_SKY_MORNING, preferences.getBoolean(KEY_SKY_MOODS, true)),
             skyWhiteNights = preferences.getBoolean(KEY_SKY_WHITE_NIGHTS, preferences.getBoolean(KEY_SKY_MOODS, true)),
@@ -240,6 +243,11 @@ private class AppDisplayPreferences(context: Context) {
 
     fun setArtworkTint(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_ARTWORK_TINT, enabled) }
+    }
+
+    fun setVoiceLight(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_VOICE_LIGHT, enabled) }
+        VoiceLightSwitch.on = enabled
     }
 
     fun setSkyMood(mood: ru.e1173.nookast.designsystem.SkyMood, enabled: Boolean) {
@@ -326,6 +334,7 @@ private class AppDisplayPreferences(context: Context) {
         const val KEY_PODCAST_VIEW_MODE = "podcast_view_mode"
         const val KEY_EPISODE_LIST_VIEW_MODE = "episode_list_view_mode"
         const val KEY_ARTWORK_TINT = "artwork_tint"
+        const val KEY_VOICE_LIGHT = "voice_light"
         const val KEY_SKY_MOODS = "sky_moods"
         const val KEY_SKY_MORNING = "sky_morning"
         const val KEY_SKY_WHITE_NIGHTS = "sky_white_nights"
@@ -388,6 +397,11 @@ class AppPreferencesViewModel(application: Application) : AndroidViewModel(appli
         _state.value = preferences.state
     }
 
+    fun setVoiceLight(enabled: Boolean) {
+        preferences.setVoiceLight(enabled)
+        _state.value = preferences.state
+    }
+
     fun setSkyMood(mood: ru.e1173.nookast.designsystem.SkyMood, enabled: Boolean) {
         preferences.setSkyMood(mood, enabled)
         _state.value = preferences.state
@@ -431,4 +445,18 @@ class AppPreferencesViewModel(application: Application) : AndroidViewModel(appli
     override fun onCleared() {
         preferences.unregisterListener(listener)
     }
+}
+
+/**
+ * Whether «Light follows the voice» is on (design audit 5.8), for the player service: it decides,
+ * each time the audio chain is configured, whether the level listener joins it.
+ */
+fun voiceLightEnabled(context: Context): Boolean = AppDisplayPreferences(context).state.voiceLight
+
+/**
+ * The switch as the playback thread reads it, many times a second (design audit 5.8): a plain flag,
+ * loaded once by the player service and kept current by the setting.
+ */
+object VoiceLightSwitch {
+    @Volatile var on: Boolean = false
 }

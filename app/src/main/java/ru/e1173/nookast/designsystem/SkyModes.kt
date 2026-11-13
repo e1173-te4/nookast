@@ -51,6 +51,8 @@ fun NookastColors.underSky(sky: SkyState): NookastColors {
         accentStrong = accentStrong.toward(),
         trackFill = trackFill.toward(),
         tintContainer = tintContainer.toward(),
+        accentText = accentText.toward(),
+        accentFill = accentFill.toward(),
     )
 }
 

@@ -1,10 +1,19 @@
 package ru.e1173.nookast.ui
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import ru.e1173.nookast.designsystem.leavingTitle
+import ru.e1173.nookast.designsystem.trackLargeTitle
+import ru.e1173.nookast.designsystem.trackHeaderBar
+import ru.e1173.nookast.designsystem.NookType.scaled
+import ru.e1173.nookast.designsystem.nookCard
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,6 +105,8 @@ internal fun EpisodeListScreen(
     actions: EpisodeListActions,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    /** The Feed'''s «Try again» after a failed load (design audit 5.6). */
+    onRetry: (() -> Unit)? = null,
     /** Covers in the rows: smart playlists show them, the Feed does not (user, 29.10.2026). */
     showArtwork: Boolean = false,
     /** A smart playlist or the Feed ([FEED_HIDE_PLAYED_KEY]) can hide its played episodes like a
@@ -114,6 +125,16 @@ internal fun EpisodeListScreen(
     val scrolled by remember {
         derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0 }
     }
+    // Skeletons only before the list has loaded once: a visit refreshes it quietly (review of audit 5).
+    var listLoadedOnce by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var listWasLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(loading, entries.isNotEmpty()) {
+        if (entries.isNotEmpty() || (listWasLoading && !loading)) listLoadedOnce = true
+        listWasLoading = loading
+    }
+    // The bar's title follows the large one going under it (design audit 4.6).
+    val titleTracker = ru.e1173.nookast.designsystem.rememberHeaderTitleTracker()
+    val density = androidx.compose.ui.platform.LocalDensity.current
     // A playlist opened from the Dashboard owns the whole width for its glass bar; the Feed is
     // inset by the app.
     val sides = if (onBack != null) 7.dp else 0.dp
@@ -137,15 +158,14 @@ internal fun EpisodeListScreen(
                     canPlay = entries.isNotEmpty(),
                     largeControls = largeControls,
                     onPlayAll = { actions.onPlay(entries, 0) },
+                    titleTracker = titleTracker,
                 )
                 if (!description.isNullOrBlank()) {
-                    val shape = RoundedCornerShape(16.dp)
+                    val shape = ru.e1173.nookast.designsystem.NookShapes.l
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .clip(shape)
-                            .background(colors.surface.compositeOver(colors.background))
-                            .border(1.dp, colors.divider.copy(alpha = 0.7f), shape)
+                            .nookCard(radius = ru.e1173.nookast.designsystem.NookShapes.lRadius)
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                     ) {
                         NookExpandable(
@@ -155,31 +175,30 @@ internal fun EpisodeListScreen(
                         ) {
                             Text(
                                 description,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 22.sp),
+                                style = ru.e1173.nookast.designsystem.NookType.body,
                                 color = colors.textSecondary,
                             )
                         }
                     }
                 }
                 if (error != null && entries.isEmpty()) {
-                    Text(stringResource(R.string.feed_error), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-                } else if (entries.isEmpty() && !loading) {
-                    Text(stringResource(R.string.feed_empty), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                    ru.e1173.nookast.designsystem.NookEmptyState(
+                        title = stringResource(R.string.empty_feed_error_title),
+                        message = stringResource(R.string.feed_error),
+                        actionLabel = stringResource(R.string.empty_retry),
+                        onAction = onRetry,
+                    )
+                } else if (entries.isEmpty() && (!loading || listLoadedOnce)) {
+                    ru.e1173.nookast.designsystem.NookEmptyState(
+                        title = stringResource(R.string.empty_feed_title),
+                        message = stringResource(R.string.empty_feed_message),
+                    )
+                } else if (entries.isEmpty() && !listLoadedOnce) {
+                    // First load: placeholders of the rows (design audit 5.4).
+                    ru.e1173.nookast.designsystem.NookSkeletonRows(6)
                 }
                 if (entries.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            stringResource(R.string.episodes_section),
-                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary,
-                            // One line, never split mid-word (user, 31.10.2026: «Выпуск/и»): the toggle beside it
-                            // takes the room left and wraps its own label instead.
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier.sectionHeading(),
-                        )
-                        Spacer(Modifier.width(8.dp))
+                    ru.e1173.nookast.designsystem.NookSectionTitle(stringResource(R.string.episodes_section), Modifier.padding(top = 4.dp)) {
                         if (playlistId != null) {
                             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                                 HidePlayedToggle(hidePlayed) { preferences.setPlaylistHidePlayed(playlistId, !hidePlayed) }
@@ -220,6 +239,7 @@ internal fun EpisodeListScreen(
                     downloading = state == EpisodeDownloadState.QUEUED || state == EpisodeDownloadState.DOWNLOADING,
                     downloadProgress = downloadProgress[entry.episodeId],
                     playing = current && isPlaying,
+                    current = current,
                     largeControls = largeControls,
                     onOpen = { actions.onOpen(shown, index) },
                     onPlay = { if (current) actions.onTogglePlayback() else actions.onPlay(shown, index) },
@@ -238,6 +258,7 @@ internal fun EpisodeListScreen(
                 downloading = state == EpisodeDownloadState.QUEUED || state == EpisodeDownloadState.DOWNLOADING,
                 downloadProgress = downloadProgress[entry.episodeId],
                 playing = current && isPlaying,
+                current = current,
                 largeControls = largeControls,
                 onOpen = { actions.onOpen(shown, index) },
                 onPlay = { if (current) actions.onTogglePlayback() else actions.onPlay(shown, index) },
@@ -252,7 +273,16 @@ internal fun EpisodeListScreen(
             headerHeight = 52.dp,
             scrolled = scrolled,
             modifier = modifier.fillMaxSize(),
-            header = { ListBackBar(title = title, showTitle = scrolled, onBack = onBack) },
+            header = {
+                ListBackBar(
+                    title = title,
+                    showTitle = scrolled,
+                    onBack = onBack,
+                    // Restored already scrolled past the hero: the title was never measured (review of audit 4).
+                    titleProgress = { if (titleTracker.measured) titleTracker.progress(density) else if (scrolled) 1f else 0f },
+                    modifier = Modifier.trackHeaderBar(titleTracker),
+                )
+            },
         ) { topPadding -> grid(topPadding) }
     } else {
         Box(modifier.fillMaxSize()) { grid(LocalTopInset.current + 4.dp) }
@@ -268,6 +298,8 @@ private fun ListHero(
     canPlay: Boolean,
     largeControls: Boolean,
     onPlayAll: () -> Unit,
+    /** Measures the large title and fades it as it leaves under the bar (design audit 4.6). */
+    titleTracker: ru.e1173.nookast.designsystem.HeaderTitleTracker? = null,
 ) {
     val colors = LocalNookastColors.current
     val scale = if (largeControls) 4f / 3f else 1f
@@ -279,49 +311,38 @@ private fun ListHero(
         Box(
             Modifier
                 .size(96.dp * scale)
-                .clip(RoundedCornerShape(24.dp * scale))
-                .background(Brush.linearGradient(listOf(colors.accent, colors.accentStrong))),
+                .clip(RoundedCornerShape(ru.e1173.nookast.designsystem.NookShapes.xlRadius * scale))
+                // The glyph is onAccent: at night a solid accent, so it reads (design audit 1.2).
+                .background(
+                    if (colors.isDark) {
+                        androidx.compose.ui.graphics.SolidColor(colors.accent)
+                    } else {
+                        Brush.linearGradient(listOf(colors.accent, colors.accentStrong))
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) { glyph() }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 title,
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp * scale, lineHeight = 30.sp * scale),
-                fontWeight = FontWeight.Bold,
+                style = ru.e1173.nookast.designsystem.NookType.heroTitle.scaled(scale),
                 color = colors.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = titleTracker?.let { tracker ->
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    Modifier.trackLargeTitle(tracker).leavingTitle { tracker.progress(density) }
+                } ?: Modifier,
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1)
-                if (loading) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp, color = colors.accent)
+                if (loading) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp, color = colors.accentText)
             }
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HeroButton(stringResource(R.string.list_play_all), filled = true, enabled = canPlay, onClick = onPlayAll)
+                ru.e1173.nookast.designsystem.NookButton(stringResource(R.string.list_play_all), onClick = onPlayAll, enabled = canPlay)
             }
         }
-    }
-}
-
-@Composable
-private fun HeroButton(label: String, filled: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val colors = LocalNookastColors.current
-    Box(
-        Modifier
-            .heightIn(min = 40.dp)
-            .clip(CircleShape)
-            .background(if (filled) colors.accent else colors.tintContainer)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
-            fontWeight = FontWeight.SemiBold,
-            color = if (filled) colors.onAccent else colors.accent,
-        )
     }
 }
 
@@ -373,11 +394,16 @@ internal fun playlistRulesText(rules: PlaylistRules): String {
 internal fun HidePlayedToggle(hidePlayed: Boolean, modifier: Modifier = Modifier, onToggle: () -> Unit) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(
+            // 48 dp to touch, though the box and label are smaller (independent review of audit 1–2).
+            .heightIn(min = 48.dp)
+            .clip(ru.e1173.nookast.designsystem.NookShapes.xs)
+            // One label; the box alone shows the state, and TalkBack hears a check box (design audit 1.3).
+            .toggleable(
+                value = hidePlayed,
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                 indication = null,
-                onClick = onToggle,
+                role = androidx.compose.ui.semantics.Role.Checkbox,
+                onValueChange = { onToggle() },
             )
             .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -385,8 +411,8 @@ internal fun HidePlayedToggle(hidePlayed: Boolean, modifier: Modifier = Modifier
     ) {
         CompactCheckbox(checked = hidePlayed)
         Text(
-            stringResource(if (hidePlayed) R.string.podcast_show_played else R.string.podcast_hide_played),
-            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Normal),
+            stringResource(R.string.podcast_hide_played),
+            style = ru.e1173.nookast.designsystem.NookType.meta,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
         )
@@ -398,36 +424,6 @@ internal const val FEED_HIDE_PLAYED_KEY = Int.MAX_VALUE
 
 /** The sticky bar of a list opened from the Dashboard: Back, and the list's name once scrolled. */
 @Composable
-private fun ListBackBar(title: String, showTitle: Boolean, onBack: () -> Unit) {
-    val colors = LocalNookastColors.current
-    val backLabel = stringResource(R.string.back)
-    Box(Modifier.fillMaxSize().padding(horizontal = 7.dp)) {
-        Box(
-            Modifier
-                .align(Alignment.CenterStart)
-                .size(48.dp)
-                .clip(CircleShape)
-                .clickable(role = Role.Button, onClick = onBack)
-                .semantics { contentDescription = backLabel },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.size(38.dp).floatingDisc().background(colors.tintContainer, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(NookIcons.ChevronLeft, null, tint = colors.accent, modifier = Modifier.size(18.dp))
-            }
-        }
-        if (showTitle) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 22.sp),
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
-            )
-        }
-    }
+private fun ListBackBar(title: String, showTitle: Boolean, onBack: () -> Unit, titleProgress: () -> Float, modifier: Modifier = Modifier) {
+    ru.e1173.nookast.designsystem.NookHeaderBar(title, showTitle, onBack, stringResource(R.string.back), modifier, titleProgress = titleProgress)
 }

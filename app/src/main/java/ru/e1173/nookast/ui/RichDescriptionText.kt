@@ -138,7 +138,7 @@ internal fun RichDescriptionText(
     onSeekTo: ((Long) -> Unit)? = null,
     hideTimestampList: Boolean = false,
 ) {
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText
     val text = remember(html, fallback, hideTimestampList) {
         normalizeDescriptionText(html)
             .let { if (hideTimestampList) descriptionWithoutTimestampList(it) else it }
@@ -147,7 +147,7 @@ internal fun RichDescriptionText(
     val links = remember(html, text) { descriptionLinks(html, text) }
     val paragraphs = remember(text, links, accent, onSeekTo) {
         val linkStyle = TextLinkStyles(SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
-        val timeStyle = TextLinkStyles(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold))
+        val timeStyle = TextLinkStyles(SpanStyle(color = accent, fontWeight = ru.e1173.nookast.designsystem.NookType.emphasis))
         var offset = 0
         text.split("\n\n").map { paragraph ->
             val base = offset
