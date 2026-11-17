@@ -19,6 +19,9 @@ internal data class PlayerSettings(
     val queueSwipeStartAction: QueueSwipeAction = QueueSwipeAction.DOWNLOAD_OR_DELETE,
     val queueSwipeEndAction: QueueSwipeAction = QueueSwipeAction.REMOVE_FROM_QUEUE,
     val autoAddStartedEpisodeToQueue: Boolean = true,
+    /** On-device download cleanup defaults (DEC-064). */
+    val deletePlayedDownloads: Boolean = false,
+    val deleteDownloadsAfterDays: Int = 0,
 )
 
 /**
@@ -47,7 +50,21 @@ internal class PlayerSettingsViewModel(application: Application) : AndroidViewMo
         queueSwipeStartAction = preferences.queueSwipeStartAction,
         queueSwipeEndAction = preferences.queueSwipeEndAction,
         autoAddStartedEpisodeToQueue = preferences.autoAddStartedEpisodeToQueue,
+        deletePlayedDownloads = preferences.deletePlayedDownloads,
+        deleteDownloadsAfterDays = preferences.deleteDownloadsAfterDays,
     )
+
+    fun setDeletePlayedDownloads(enabled: Boolean) = change { deletePlayedDownloads = enabled }
+
+    fun setDeleteDownloadsAfterDays(days: Int) = change { deleteDownloadsAfterDays = days }
+
+    fun podcastCleanup(podcastId: Int): Pair<Boolean?, Int?> =
+        preferences.podcastDeletePlayed(podcastId) to preferences.podcastDeleteAfterDays(podcastId)
+
+    fun setPodcastCleanup(podcastId: Int, deletePlayed: Boolean?, deleteAfterDays: Int?) {
+        preferences.setPodcastDeletePlayed(podcastId, deletePlayed)
+        preferences.setPodcastDeleteAfterDays(podcastId, deleteAfterDays)
+    }
 
     private fun change(write: PlaybackPreferences.() -> Unit) {
         preferences.write()

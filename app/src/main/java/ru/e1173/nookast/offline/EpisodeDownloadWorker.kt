@@ -96,6 +96,9 @@ class EpisodeDownloadWorker(
                 throw PermanentDownloadException("HTTP ${response.code}")
             }
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            // A captive portal, a login wall or an error page is never saved as the episode: the
+            // other source is tried instead (failInApp → switchToFallback).
+            if (isHtmlMediaType(response.header("Content-Type"))) throw PermanentDownloadException("html instead of audio")
             val append = response.code == 206 && resumeFrom > 0
             val body = response.body
             val total = body.contentLength().takeIf { it > 0 }?.let { if (append) it + resumeFrom else it }

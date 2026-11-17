@@ -77,6 +77,12 @@ interface SyncV8Dao {
     @Query("DELETE FROM queue_intents WHERE operation_id IN (:operationIds)")
     suspend fun deleteQueueIntents(operationIds: List<String>)
 
+    @androidx.room.Update
+    suspend fun updateQueueIntent(entity: QueueIntentEntity)
+
+    @Query("DELETE FROM playback_progress WHERE episode_id = :episodeId")
+    suspend fun deleteProgress(episodeId: Int)
+
     @Query("SELECT COUNT(*) FROM queue_intents")
     fun observeQueueIntentCount(): Flow<Int>
 

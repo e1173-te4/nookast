@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,7 +34,10 @@ fun NookEmptyState(
     ) {
         if (!compact) {
             val palette = LocalThemePalette.current
-            NookTimelineThumb(palette, scale = EMPTY_THUMB_SIZE / thumbBox(palette))
+            // The thumb's whole drawing fits the 56 dp (the On Air needle and the Beacon house draw past their box).
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(EMPTY_THUMB_SIZE), contentAlignment = Alignment.Center) {
+                NookTimelineThumb(palette, scale = EMPTY_THUMB_SIZE / thumbExtent(palette), compact = true)
+            }
         }
         Text(
             title,

@@ -152,6 +152,7 @@ internal fun ConnectedHome(
     onMarkPodcastEpisodesUnplayedCommitted: (List<QueueListEntry>, (Boolean) -> Unit) -> Unit,
     onUnsubscribePodcast: (Int) -> Unit,
     onChangeFeedUrl: (Int, String, (FeedUrlChangeResult) -> Unit) -> Unit = { _, _, _ -> },
+    onRefreshPodcastFromFeed: (Int, Boolean) -> Unit = { _, _ -> },
     onCloseSettings: () -> Unit,
     onRunDiagnostics: () -> Unit,
     onSignOut: () -> Unit,
@@ -266,6 +267,7 @@ internal fun ConnectedHome(
                 onMarkEpisodesUnplayedCommitted = onMarkPodcastEpisodesUnplayedCommitted,
                 onUnsubscribe = onUnsubscribePodcast,
                 onChangeFeedUrl = onChangeFeedUrl,
+                onRefreshFromFeed = onRefreshPodcastFromFeed,
                 onLoadPodcast = onLoadPodcast,
             )
         }

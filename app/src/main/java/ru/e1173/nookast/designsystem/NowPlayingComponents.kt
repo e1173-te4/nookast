@@ -172,8 +172,8 @@ fun NookPlayPauseButton(
                     val r = this.size.minDimension / 2f
                     val k = playLight?.playGlow() ?: glowIntensity
                     drawCssShadow(Color.Black.copy(alpha = 0.5f), 24.dp, r, dy = 8.dp)
-                    drawCssShadow(colors.accentStrong.copy(alpha = lit(0.40f * k)), 64.dp, r)
-                    drawCssShadow(colors.accent.copy(alpha = lit(0.65f * k)), 32.dp, r)
+                    drawCssShadow(playLight.tintOr(colors.accentStrong).copy(alpha = lit(0.40f * k)), 64.dp, r)
+                    drawCssShadow(playLight.tintOr(colors.accent).copy(alpha = lit(0.65f * k)), 32.dp, r)
                 }
             }
             .shadow(
@@ -387,9 +387,13 @@ fun NookTimeline(
     scale: Float = 1f,
     // False shows the position but takes no touch: a preview of an episode that is not playing.
     enabled: Boolean = true,
+    // While it plays the theme's track and thumb move (DEC-061); at rest they are a still picture.
+    playing: Boolean = false,
 ) {
     val colors = nook
     val palette = LocalThemePalette.current
+    // Autumn has no motion: its clock never ticks.
+    val motion = rememberThemeMotion(playing && enabled && palette != ThemePalette.AUTUMN)
     var dragFraction by remember { mutableFloatStateOf(-1f) }
     val fraction = when {
         dragFraction >= 0f -> dragFraction
@@ -460,41 +464,22 @@ fun NookTimeline(
                 scale = scale,
             )
         }
-        val track = 4.dp * scale
-        Canvas(Modifier.fillMaxWidth().height(track)) {
-            val gapPx = 4.dp.toPx() * scale
-            val w = size.width
-            val h = size.height
-            val thumbX = fraction * w
-            val radius = androidx.compose.ui.geometry.CornerRadius(h / 2f)
-            segments.forEachIndexed { index, (start, end) ->
-                val startPx = start * w + if (index == 0) 0f else gapPx / 2f
-                val endPx = end * w - if (index == segments.lastIndex) 0f else gapPx / 2f
-                if (endPx <= startPx) return@forEachIndexed
-                val segment = androidx.compose.ui.geometry.Size(endPx - startPx, h)
-                drawRoundRect(colors.track, Offset(startPx, 0f), segment, radius)
-                if (colors.isDark) {
-                    drawRoundRect(
-                        colors.divider.scaleAlpha(0.5f),
-                        Offset(startPx, 0f),
-                        segment,
-                        radius,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(0.75.dp.toPx()),
-                    )
-                }
-                if (thumbX > startPx) {
-                    val filled = androidx.compose.ui.geometry.Size(thumbX.coerceAtMost(endPx) - startPx, h)
-                    if (colors.isDark) drawGlowBar(colors.trackFill.copy(alpha = 0.5f), Offset(startPx, 0f), filled, 6.dp)
-                    drawRoundRect(colors.trackFill, Offset(startPx, 0f), filled, radius)
-                }
-            }
-        }
+        // The theme's track over the whole row, centred in it (DEC-061; Autumn as before).
+        Spacer(Modifier.fillMaxSize().graphicsLayer().themedTimeline(palette, colors, segments, fraction, motion, scale))
         val box = thumbBox(palette) * scale
+        val density = LocalDensity.current
+        // The Beacon house stands on its wave; every other thumb sits on the straight track.
+        val rise = if (palette == ThemePalette.BEACON) {
+            with(density) { beaconWaveDy((maxWidth * fraction).toPx(), 1.dp.toPx() * scale).toDp() }
+        } else {
+            0.dp
+        }
         NookTimelineThumb(
             palette = palette,
             scale = scale,
             active = dragFraction >= 0f,
-            modifier = Modifier.offset(x = maxWidth * fraction - box / 2),
+            motion = motion,
+            modifier = Modifier.offset(x = maxWidth * fraction - box / 2, y = rise),
         )
     }
 }
@@ -581,7 +566,27 @@ fun NookTimecodes(
     modifier: Modifier = Modifier,
     scale: Float = 1f,
     center: (@Composable () -> Unit)? = null,
+    /** The source pill (DEC-069): given the room between the times, so it never runs into them. */
+    centerFitted: (@Composable (maxWidth: androidx.compose.ui.unit.Dp) -> Unit)? = null,
 ) {
+    if (centerFitted != null) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val fittedStyle = TextStyle(fontFamily = Manrope, fontSize = 12.sp * scale, fontWeight = FontWeight(600), lineHeight = 18.sp * scale, fontFeatureSettings = "tnum", color = nook.textSecondary)
+        androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val times = with(density) {
+                maxOf(
+                    measurer.measure(elapsed, fittedStyle, maxLines = 1).size.width,
+                    measurer.measure(remaining, fittedStyle, maxLines = 1).size.width,
+                ).toDp()
+            }
+            val room = (maxWidth - 8.dp - (times + 8.dp) * 2).coerceAtLeast(0.dp)
+            Text(elapsed, style = fittedStyle, modifier = Modifier.align(Alignment.TopStart))
+            Text(remaining, style = fittedStyle, modifier = Modifier.align(Alignment.TopEnd))
+            Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp * scale)) { centerFitted(room) }
+        }
+        return
+    }
     val style = TextStyle(
         fontFamily = Manrope,
         fontSize = 12.sp * scale,
@@ -643,7 +648,7 @@ fun NookChapterPill(
                 if (colors.isDark) {
                     val r = 12.dp.toPx() * scale
                     drawCssShadow(Color.Black.copy(alpha = 0.30f), 12.dp, r, dy = 4.dp)
-                    drawCssShadow(colors.accent.copy(alpha = lit(0.22f * k())), 14.dp, r, dy = (-2).dp)
+                    drawCssShadow(playLight.tintOr(colors.accent).copy(alpha = lit(0.22f * k())), 14.dp, r, dy = (-2).dp)
                 }
             }
             .clip(shape)
@@ -655,15 +660,15 @@ fun NookChapterPill(
                 val focus = Offset(size.width / 2f, -12.dp.toPx())
                 val reach = kotlin.math.hypot(size.width / 2f, size.height + 12.dp.toPx())
                 val cone = Brush.radialGradient(
-                    0f to colors.accent.copy(alpha = lit(0.32f * k())),
-                    0.45f to colors.accent.copy(alpha = lit(0.08f * k())),
+                    0f to playLight.tintOr(colors.accent).copy(alpha = lit(0.32f * k())),
+                    0.45f to playLight.tintOr(colors.accent).copy(alpha = lit(0.08f * k())),
                     0.85f to Color.Transparent,
                     center = focus,
                     radius = reach,
                 )
                 // border-top: 1px accent .7, the other sides the hairline outline.
                 val edge = Brush.verticalGradient(
-                    0f to colors.accent.copy(alpha = lit(0.70f * k())),
+                    0f to playLight.tintOr(colors.accent).copy(alpha = lit(0.70f * k())),
                     0.35f to colors.divider,
                     1f to colors.divider,
                 )
@@ -768,7 +773,7 @@ fun NookActionDock(
                 if (colors.isDark) {
                     val r = 16.dp.toPx() * scale
                     drawCssShadow(Color.Black.copy(alpha = 0.35f), 16.dp, r, dy = 4.dp)
-                    drawCssShadow(colors.accent.copy(alpha = lit(0.12f * dk())), 16.dp, r, dy = (-2).dp)
+                    drawCssShadow(playLight.tintOr(colors.accent).copy(alpha = lit(0.12f * dk())), 16.dp, r, dy = (-2).dp)
                 }
             }
             .shadow(if (colors.isDark) 0.dp else 4.dp, shape, spotColor = colors.accent.copy(alpha = 0.10f), ambientColor = colors.accent.copy(alpha = 0.05f))
@@ -778,14 +783,14 @@ fun NookActionDock(
                 // radial-gradient(circle at 50% -16px, accent .20 0%, accent .03 60%, surface 100%)
                 // and border-top accent .45: the second, weaker reflection of Play.
                 val cone = Brush.radialGradient(
-                    0f to colors.accent.copy(alpha = lit(0.20f * dk())),
-                    0.60f to colors.accent.copy(alpha = lit(0.03f * dk())),
+                    0f to playLight.tintOr(colors.accent).copy(alpha = lit(0.20f * dk())),
+                    0.60f to playLight.tintOr(colors.accent).copy(alpha = lit(0.03f * dk())),
                     1f to Color.Transparent,
                     center = Offset(size.width / 2f, -16.dp.toPx()),
                     radius = kotlin.math.hypot(size.width / 2f, size.height + 16.dp.toPx()),
                 )
                 val edge = Brush.verticalGradient(
-                    0f to colors.accent.copy(alpha = lit(0.45f * dk())),
+                    0f to playLight.tintOr(colors.accent).copy(alpha = lit(0.45f * dk())),
                     0.35f to colors.divider,
                     1f to colors.divider,
                 )
@@ -869,12 +874,13 @@ private fun DockButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon()
-        Text(
+        // A label with the file's size (DEC-069) shrinks to 10 sp before it takes an ellipsis.
+        androidx.compose.foundation.text.BasicText(
             label,
-            style = TextStyle(fontFamily = Manrope, fontSize = 13.sp * scale, fontWeight = FontWeight(600), lineHeight = 19.5.sp * scale),
-            color = colors.textPrimary,
+            style = TextStyle(fontFamily = Manrope, fontSize = 13.sp * scale, fontWeight = FontWeight(600), lineHeight = 19.5.sp * scale, color = colors.textPrimary),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp * scale, maxFontSize = 13.sp * scale, stepSize = .5.sp),
         )
     }
 }
@@ -1090,17 +1096,37 @@ internal fun thumbBox(palette: ThemePalette): Dp = when (palette) {
     ThemePalette.WINTER, ThemePalette.MINT -> 28.dp // the disc of the mockups
     ThemePalette.AUTUMN -> 36.dp // the fixed exception of the thumb spec: 36 dp box, centred
     ThemePalette.SIGNATURE -> 26.dp // the pearl and its halo
+    ThemePalette.ON_AIR -> 16.dp // the needle, its lamp and glow draw past the box
+    ThemePalette.FIREFLY -> 28.dp // the ball and its halo
+    ThemePalette.BEACON -> 20.dp // the house stands on the box's centre; its beam draws past the box
+}
+
+/** The full height a thumb draws, for showing it alone at a given size (the empty state). */
+internal fun thumbExtent(palette: ThemePalette): Dp = when (palette) {
+    ThemePalette.ON_AIR -> 32.dp
+    ThemePalette.BEACON -> 28.dp
+    else -> thumbBox(palette)
 }
 
 /**
  * Timeline thumb of the Stitch mockups, for good (user, 31.10.2026: the trial option became the
  * thumb): Lavender «Prism Gem» with its rim, the Winter snowflake and the Mint leaf in their discs,
- * the Autumn maple PNG and the Signature pearl, each with its own soft glow. While scrubbing
- * ([active]) it grows to 1.15 on a 400/0.80 spring and glows 25 % brighter.
+ * the Autumn maple PNG and the Signature pearl, each with its own soft glow; the On Air needle, the
+ * Firefly ball and the Beacon lighthouse of DEC-061. While scrubbing ([active]) it grows to 1.15 on a
+ * 400/0.80 spring and glows 25 % brighter. [motion] plays the theme's thumb motion (DEC-061; Autumn
+ * has none); [compact] fits it into the settings row's box (the Beacon house centred, a short beam).
  */
 @Composable
-fun NookTimelineThumb(palette: ThemePalette, modifier: Modifier = Modifier, scale: Float = 1f, active: Boolean = false) {
-    val dark = nook.isDark
+fun NookTimelineThumb(
+    palette: ThemePalette,
+    modifier: Modifier = Modifier,
+    scale: Float = 1f,
+    active: Boolean = false,
+    motion: ThemeMotion = ThemeMotion.Still,
+    compact: Boolean = false,
+) {
+    val colors = nook
+    val dark = colors.isDark
     val grow by animateFloatAsState(
         if (active) 1.15f else 1f,
         androidx.compose.animation.core.spring(dampingRatio = 0.80f, stiffness = 400f),
@@ -1109,9 +1135,17 @@ fun NookTimelineThumb(palette: ThemePalette, modifier: Modifier = Modifier, scal
     val boost = if (active) 1.25f else 1f
     Box(modifier.size(thumbBox(palette) * scale).scale(grow), contentAlignment = Alignment.Center) {
         when (palette) {
-            ThemePalette.LAVENDER -> Canvas(Modifier.fillMaxSize()) {
-                drawPrismGem(center, unit = 1.dp.toPx() * scale, glow = (if (dark) 0.45f else 0.32f) * boost, stitchRim = true)
+            // The still drawing and its motion are separate layers (the motion Spacer has its own graphicsLayer):
+            // a frame of motion redraws only that layer, never the still drawing beside it.
+            ThemePalette.LAVENDER -> {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawPrismGem(center, unit = 1.dp.toPx() * scale, glow = (if (dark) 0.45f else 0.32f) * boost, stitchRim = true)
+                }
+                Spacer(Modifier.fillMaxSize().graphicsLayer().lavenderSparks(scale, motion))
             }
+            ThemePalette.ON_AIR -> Spacer(Modifier.fillMaxSize().graphicsLayer().onAirNeedle(scale, colors, motion))
+            ThemePalette.FIREFLY -> Spacer(Modifier.fillMaxSize().graphicsLayer().fireflyBall(scale, colors, motion))
+            ThemePalette.BEACON -> Spacer(Modifier.fillMaxSize().graphicsLayer().beaconLighthouse(scale, colors, motion, compact))
             // The glyph in a 28 dp disc of frosted glass with the mockups' two outlines.
             ThemePalette.WINTER -> ThumbDisc(
                 disc = if (dark) Color(0xF5131B2A) else Color(0xEBFFFFFF),
@@ -1126,7 +1160,8 @@ fun NookTimelineThumb(palette: ThemePalette, modifier: Modifier = Modifier, scal
                     glow = Color(0xFF0284C7).copy(alpha = 0.35f * boost),
                     sigma = (4f * 0.21f * scale).dp,
                     dy = (2f * 0.21f * scale).dp,
-                    modifier = Modifier.size(21.dp * scale),
+                    // DEC-061: the snowflake turns slowly while it plays.
+                    modifier = Modifier.size(21.dp * scale).graphicsLayer { rotationZ = winterTurn(motion) },
                 )
             }
             // The mockups' own leaf (user, 31.10.2026: the redrawn one was not as good): the 24-unit
@@ -1144,13 +1179,21 @@ fun NookTimelineThumb(palette: ThemePalette, modifier: Modifier = Modifier, scal
                     glow = if (dark) Color(0xFF10B981).copy(alpha = 0.8f * boost) else Color(0xFF064E3B).copy(alpha = 0.12f),
                     sigma = (if (dark) 2f else 0.5f).dp * scale,
                     dy = (if (dark) 0f else 1f).dp * scale,
-                    modifier = Modifier.size((if (dark) 16.dp else 20.dp) * scale),
+                    // DEC-061: the leaf flutters about its stalk while it plays.
+                    modifier = Modifier.size((if (dark) 16.dp else 20.dp) * scale).graphicsLayer {
+                        rotationZ = mintFlutter(motion)
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.2f, 0.9f)
+                    },
                 )
             }
             // Signature: the icon's two waves of hair, peach and lavender, meeting in one disc
             // (user, 29.10.2026: a marker from the icon and the theme, without an outline).
-            ThemePalette.SIGNATURE -> Canvas(Modifier.fillMaxSize()) {
-                drawSignatureWave(center, r = 8.5.dp.toPx() * scale, glow = (if (dark) 0.42f else 0.26f) * boost)
+            ThemePalette.SIGNATURE -> {
+                val glow = (if (dark) 0.42f else 0.26f) * boost
+                Spacer(Modifier.fillMaxSize().graphicsLayer().signatureHalo(8.5f * scale, glow, motion))
+                Canvas(Modifier.fillMaxSize()) {
+                    drawSignatureWave(center, r = 8.5.dp.toPx() * scale, glow = glow, halo = false)
+                }
             }
             // Warm amber glow in dark themes only, no outline (thumb spec §2.2).
             ThemePalette.AUTUMN -> GlowingThumb(
@@ -1159,6 +1202,10 @@ fun NookTimelineThumb(palette: ThemePalette, modifier: Modifier = Modifier, scal
                 sigma = 3.dp * scale,
                 dy = 0.dp,
             )
+        }
+        // DEC-061: tiny snowflakes fall from the Winter thumb while it plays.
+        if (palette == ThemePalette.WINTER) {
+            Spacer(Modifier.fillMaxSize().graphicsLayer().winterSnow(28f, scale, motion, dark))
         }
     }
 }

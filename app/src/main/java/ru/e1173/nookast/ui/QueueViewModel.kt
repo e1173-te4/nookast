@@ -106,6 +106,9 @@ data class QueueUiState(
     val serverFeedProblems: Map<Int, ru.e1173.nookast.data.remote.ServerFeedProblem> = emptyMap(),
     // Podcasts whose feed the phone itself read lately: a server problem with them is the server's alone.
     val feedsReadByPhone: Set<Int> = emptySet(),
+    // Podcasts whose feed the server is reading now at the user's request, and those whose last such read failed.
+    val podcastFeedRefreshing: Set<Int> = emptySet(),
+    val podcastFeedRefreshFailed: Set<Int> = emptySet(),
     val podcastsRefreshing: Boolean = false,
     val podcastsError: QueueLoadError? = null,
     val pendingPodcastCount: Int = 0,
@@ -484,7 +487,11 @@ class QueueViewModel(
 
     fun downloadEpisode(entry: QueueListEntry) {
         viewModelScope.launch {
-            val state = withContext(Dispatchers.IO) { downloadManager.enqueue(entry) }
+            val state = withContext(Dispatchers.IO) {
+                val podcastId = entry.episodeId.takeIf { it > 0 }
+                    ?.let { id -> offlinePodcastCache.episodesByPinePodsIds(listOf(id))[id]?.podcastId }
+                downloadManager.enqueue(entry, podcastId = podcastId)
+            }
             _state.update {
                 it.copy(
                     downloadStates = it.downloadStates + (entry.episodeId to state),
@@ -938,6 +945,52 @@ class QueueViewModel(
             }
             refreshPodcastDownloadStates(podcastId)
             podcastDetailsByIdJobs.remove(podcastId)
+        }
+    }
+
+    /**
+     * The server reads this podcast's feed now (PinePods 0.9.1+), then the page reloads from it.
+     * A pull asks for the cheap conditional read (`feed_problems/{id}/refresh`); «Refresh from
+     * feed» asks for a full read (`refresh_podcast_details`, never with `reset_edits`). Online only:
+     * nothing local changes, so there is nothing for the outbox.
+     */
+    fun refreshPodcastFromFeed(podcastId: Int, full: Boolean) {
+        if (podcastId <= 0 || podcastId in _state.value.podcastFeedRefreshing) return
+        val session = sessionStore.load() ?: return
+        _state.update {
+            it.copy(
+                podcastFeedRefreshing = it.podcastFeedRefreshing + podcastId,
+                podcastFeedRefreshFailed = it.podcastFeedRefreshFailed - podcastId,
+            )
+        }
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val problem = if (full) {
+                        podcastFeedClient.refreshDetails(session, podcastId)
+                        null
+                    } else {
+                        podcastFeedClient.refreshNow(session, podcastId)
+                    }
+                    offlinePodcastCache.upsertPinePodsDetails(podcastDetailsClient.fetchByPodcastId(session, podcastId), clock.millis())
+                    problem
+                }
+            }
+            _state.update { current ->
+                val problems = outcome.getOrNull().let { problem ->
+                    when {
+                        outcome.isFailure -> current.serverFeedProblems
+                        problem == null -> current.serverFeedProblems - podcastId
+                        else -> current.serverFeedProblems + (podcastId to problem)
+                    }
+                }
+                current.copy(
+                    podcastFeedRefreshing = current.podcastFeedRefreshing - podcastId,
+                    podcastFeedRefreshFailed = if (outcome.isFailure) current.podcastFeedRefreshFailed + podcastId else current.podcastFeedRefreshFailed,
+                    serverFeedProblems = problems,
+                )
+            }
+            refreshPodcastDownloadStates(podcastId)
         }
     }
 

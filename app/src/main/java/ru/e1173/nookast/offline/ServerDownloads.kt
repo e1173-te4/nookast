@@ -175,6 +175,19 @@ class ServerDownloads(
 
     fun isTemporary(episodeId: Int): Boolean = episodeId in temporaryMarks()
 
+    /** The server merged [old] into [new] (0.9.1+): a temporary mark follows, so cleanup still finds it. */
+    fun remapEpisodeId(old: Int, new: Int) {
+        synchronized(preferences) {
+            val marks = temporaryMarks()
+            val mark = marks[old] ?: return@synchronized
+            // The merged episode stored on the server without a mark of its own is a download the
+            // user made: it never inherits a mark, or the cleanup would delete it (review 13.11.2026).
+            val usersOwn = new in _onServer.value && new !in marks
+            writeMarks(if (usersOwn) marks - old else marks - old + (new to (marks[new] ?: mark)))
+        }
+        _onServer.update { if (old in it) it - old + new else it }
+    }
+
     private fun publish(episodeId: Int, progress: ServerDownloadProgress) {
         _progress.update { it + (episodeId to progress) }
     }

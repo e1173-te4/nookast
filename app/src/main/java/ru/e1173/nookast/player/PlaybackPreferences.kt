@@ -84,6 +84,43 @@ class PlaybackPreferences(context: Context) {
         get() = preferences.getBoolean(KEY_AUTO_ADD_STARTED_EPISODE_TO_QUEUE, true)
         set(value) = preferences.edit { putBoolean(KEY_AUTO_ADD_STARTED_EPISODE_TO_QUEUE, value) }
 
+    /** On-device cleanup (DEC-064): delete a download an hour after its episode is played. */
+    var deletePlayedDownloads: Boolean
+        get() = preferences.getBoolean(KEY_DELETE_PLAYED_DOWNLOADS, false)
+        set(value) = preferences.edit { putBoolean(KEY_DELETE_PLAYED_DOWNLOADS, value) }
+
+    /** On-device cleanup: days after the download finished (0 = never). */
+    var deleteDownloadsAfterDays: Int
+        get() = preferences.getInt(KEY_DELETE_DOWNLOADS_AFTER_DAYS, 0).coerceAtLeast(0)
+        set(value) = preferences.edit { putInt(KEY_DELETE_DOWNLOADS_AFTER_DAYS, value.coerceAtLeast(0)) }
+
+    /** Per-podcast overrides of the two settings above; null = follow the default. */
+    fun podcastDeletePlayed(podcastId: Int): Boolean? =
+        "$PREFIX_PODCAST_DELETE_PLAYED$podcastId".takeIf(preferences::contains)?.let { preferences.getBoolean(it, false) }
+
+    fun setPodcastDeletePlayed(podcastId: Int, value: Boolean?) = preferences.edit {
+        if (value == null) remove("$PREFIX_PODCAST_DELETE_PLAYED$podcastId") else putBoolean("$PREFIX_PODCAST_DELETE_PLAYED$podcastId", value)
+    }
+
+    fun podcastDeleteAfterDays(podcastId: Int): Int? =
+        "$PREFIX_PODCAST_DELETE_DAYS$podcastId".takeIf(preferences::contains)?.let { preferences.getInt(it, 0) }
+
+    fun setPodcastDeleteAfterDays(podcastId: Int, value: Int?) = preferences.edit {
+        if (value == null) remove("$PREFIX_PODCAST_DELETE_DAYS$podcastId") else putInt("$PREFIX_PODCAST_DELETE_DAYS$podcastId", value.coerceAtLeast(0))
+    }
+
+    /** Every podcast with an override: id to (delete played, days). */
+    fun cleanupOverrides(): Map<Int, Pair<Boolean?, Int?>> {
+        val ids = preferences.all.keys.mapNotNull { key ->
+            when {
+                key.startsWith(PREFIX_PODCAST_DELETE_PLAYED) -> key.removePrefix(PREFIX_PODCAST_DELETE_PLAYED).toIntOrNull()
+                key.startsWith(PREFIX_PODCAST_DELETE_DAYS) -> key.removePrefix(PREFIX_PODCAST_DELETE_DAYS).toIntOrNull()
+                else -> null
+            }
+        }.toSet()
+        return ids.associateWith { podcastDeletePlayed(it) to podcastDeleteAfterDays(it) }
+    }
+
     var aheadCacheClearRequested: Boolean
         get() = preferences.getBoolean(KEY_AHEAD_CACHE_CLEAR_REQUESTED, false)
         set(value) = preferences.edit { putBoolean(KEY_AHEAD_CACHE_CLEAR_REQUESTED, value) }
@@ -131,6 +168,10 @@ class PlaybackPreferences(context: Context) {
         // The platform-effect settings before the rework (З12): removed, not migrated (new scales).
         private val RETIRED_AUDIO_KEYS = listOf("audio_overall_gain_db", "audio_bass_db", "audio_speech_clarity")
         private const val KEY_AHEAD_CACHE_CLEAR_REQUESTED = "ahead_cache_clear_requested"
+        private const val KEY_DELETE_PLAYED_DOWNLOADS = "device_delete_played_downloads"
+        private const val KEY_DELETE_DOWNLOADS_AFTER_DAYS = "device_delete_downloads_after_days"
+        private const val PREFIX_PODCAST_DELETE_PLAYED = "device_delete_played_podcast_"
+        private const val PREFIX_PODCAST_DELETE_DAYS = "device_delete_days_podcast_"
     }
 }
 

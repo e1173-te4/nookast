@@ -35,10 +35,10 @@ android {
         applicationId = "ru.e1173.nookast"
         minSdk = 26
         targetSdk = 37
-        versionCode = 70
-        versionName = "1.2.5"
+        versionCode = 71
+        versionName = "1.2.6"
         // The APK name the user sees in chat (APK-3.12); shown in Settings → About.
-        buildConfigField("String", "DELIVERY", "\"1.2.5\"")
+        buildConfigField("String", "DELIVERY", "\"1.2.6\"")
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("boolean", "GIT_DIRTY", gitDirty.toString())
         // Over-the-air updates from the public releases (user, 2.11.2026): release builds only. A local
@@ -181,6 +181,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.androidx.room.testing)
     testImplementation(libs.robolectric)
+    // DEC-069: the source card's layout test measures real text under Robolectric (no screenshots).
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.turbine)
     androidTestImplementation(platform(libs.androidx.compose.bom))

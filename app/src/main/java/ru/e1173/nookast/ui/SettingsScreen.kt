@@ -2,7 +2,6 @@
 
 package ru.e1173.nookast.ui
 
-import ru.e1173.nookast.designsystem.themeRevealSource
 import ru.e1173.nookast.designsystem.NookSlider
 import ru.e1173.nookast.designsystem.NookSwitch
 import ru.e1173.nookast.designsystem.nookCard
@@ -41,7 +40,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected as semanticsSelected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.selection.selectableGroup
 import ru.e1173.nookast.designsystem.NookIcons
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -95,7 +96,7 @@ import ru.e1173.nookast.player.QueueInsertionPosition
 import ru.e1173.nookast.player.QueueSwipeAction
 import ru.e1173.nookast.preferences.AppThemeMode
 
-private enum class SettingsSection(
+internal enum class SettingsSection(
     val titleResource: Int,
     val descriptionResource: Int,
 ) {
@@ -337,7 +338,7 @@ private fun PhoneSettingsSectionList(
 
 /** The wide-screen section list: the same coloured tiles and names as the phone list, no hints. */
 @Composable
-private fun SettingsSidebar(
+internal fun SettingsSidebar(
     selected: SettingsSection,
     touchTarget: Dp,
     onBack: () -> Unit,
@@ -370,6 +371,7 @@ private fun SettingsSidebar(
                     .clip(ru.e1173.nookast.designsystem.NookShapes.m)
                     .background(if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else Color.Transparent)
                     .clickable { onSectionSelected(section) }
+                    .semantics { semanticsSelected = active }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -808,7 +810,8 @@ private fun OfflineSettingsPanel(
     onClearAheadCache: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val playerSettings by androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>().settings.collectAsStateWithLifecycle()
+    val settingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>()
+    val playerSettings by settingsViewModel.settings.collectAsStateWithLifecycle()
     SettingsPanel(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -832,6 +835,13 @@ private fun OfflineSettingsPanel(
                 onCheckedChange = onDownloadWholeEpisodeChanged,
             )
         }
+        ru.e1173.nookast.designsystem.NookRowDivider()
+        DeviceDownloadCleanupSettings(
+            deletePlayed = playerSettings.deletePlayedDownloads,
+            deleteAfterDays = playerSettings.deleteDownloadsAfterDays,
+            onDeletePlayedChanged = settingsViewModel::setDeletePlayedDownloads,
+            onDeleteAfterDaysChanged = settingsViewModel::setDeleteDownloadsAfterDays,
+        )
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 8.dp),
             color = MaterialTheme.colorScheme.outlineVariant,
@@ -1206,6 +1216,13 @@ private fun AppearanceSettingsContent(
     )
     PalettePanel(touchTarget)
 
+    // DEC-069: the story the source card draws its scheme with, chosen like a theme.
+    SettingsGroupLabel(
+        titleResource = R.string.settings_connection_story,
+        modifier = Modifier.padding(top = 14.dp),
+    )
+    ConnectionStoryPanel(touchTarget)
+
     SettingsGroupLabel(
         titleResource = R.string.feed_title,
         modifier = Modifier.padding(top = 14.dp),
@@ -1288,8 +1305,35 @@ private fun FeedCountPanel() {
 }
 
 @Composable
+private fun ConnectionStoryPanel(touchTarget: Dp) {
+    val preferences: ru.e1173.nookast.preferences.AppPreferencesViewModel = viewModel()
+    val display by preferences.state.collectAsStateWithLifecycle()
+    val stories = ru.e1173.nookast.designsystem.connection.ConnectionStories.all
+    val chosen = ru.e1173.nookast.designsystem.connection.ConnectionStories.byId(display.connectionStory)
+    SettingsPanel {
+        Text(
+            text = stringResource(R.string.settings_connection_story_help),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        Column(Modifier.selectableGroup()) {
+            stories.forEachIndexed { index, story ->
+                ru.e1173.nookast.designsystem.connection.NookStoryRow(
+                    story = story,
+                    selected = story == chosen,
+                    onClick = { preferences.setConnectionStory(story.id) },
+                    minHeight = touchTarget.compactRow(),
+                )
+                if (index != stories.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+    }
+}
+
+@Composable
 private fun PalettePanel(touchTarget: Dp) {
-    // DEC-017 trial (D2): the four approved colour themes; geometry and type are shared.
+    // DEC-017 and DEC-061: the eight themes in one list; geometry and type are shared.
     val preferences: ru.e1173.nookast.preferences.AppPreferencesViewModel = viewModel()
     val display by preferences.state.collectAsStateWithLifecycle()
     SettingsPanel {
@@ -1299,47 +1343,18 @@ private fun PalettePanel(touchTarget: Dp) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 12.dp),
         )
-        ru.e1173.nookast.designsystem.ThemePalette.entries.forEachIndexed { index, palette ->
-            val light = ru.e1173.nookast.designsystem.nookastColors(palette, dark = false)
-            val dark = ru.e1173.nookast.designsystem.nookastColors(palette, dark = true)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = touchTarget.compactRow())
-                    .clip(ru.e1173.nookast.designsystem.NookShapes.l)
-                    // The new theme opens as a circle from this touch (design audit 5.7).
-                    .themeRevealSource()
-                    .clickable { preferences.setPalette(palette) }
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                val chosen = display.palette == palette
-                Box(
-                    Modifier
-                        .size(20.dp)
-                        .border(
-                            width = if (chosen) 6.dp else 2.dp,
-                            color = if (chosen) ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText else MaterialTheme.colorScheme.outline,
-                            shape = CircleShape,
-                        ),
+        Column(Modifier.selectableGroup()) {
+            ru.e1173.nookast.designsystem.ThemePalette.entries.forEachIndexed { index, palette ->
+                // The chosen row shows its thumb and history; the new theme opens as a circle from the touch (audit 5.7).
+                ru.e1173.nookast.designsystem.NookThemeRow(
+                    palette = palette,
+                    selected = display.palette == palette,
+                    onClick = { preferences.setPalette(palette) },
+                    minHeight = touchTarget.compactRow(),
                 )
-                Text(
-                    text = stringResource(palette.labelResource()),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                listOf(light.background, light.accent, dark.background, dark.accent).forEach { swatch ->
-                    Box(
-                        Modifier
-                            .size(22.dp)
-                            .background(swatch, CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                    )
+                if (index != ru.e1173.nookast.designsystem.ThemePalette.entries.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-            }
-            if (index != ru.e1173.nookast.designsystem.ThemePalette.entries.lastIndex) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
         HorizontalDivider(
@@ -1451,6 +1466,23 @@ private fun PalettePanel(touchTarget: Dp) {
                 )
                 NookSwitch(checked = enabled && placeKnown, enabled = placeKnown, onCheckedChange = { preferences.setSkyMood(mood, it) })
             }
+            // The clock lengthening the morning and the evening into the dark (user, 14.11.2026).
+            if (enabled && placeKnown && mood != ru.e1173.nookast.designsystem.SkyMood.WHITE_NIGHT) {
+                val morning = mood == ru.e1173.nookast.designsystem.SkyMood.MORNING
+                SkyClockRow(
+                    title = stringResource(if (morning) R.string.settings_sky_morning_from else R.string.settings_sky_evening_until),
+                    help = stringResource(if (morning) R.string.settings_sky_morning_from_help else R.string.settings_sky_evening_until_help),
+                    minutes = if (morning) display.skyMorningFromMinutes else display.skyEveningUntilMinutes,
+                    choices = if (morning) SKY_MORNING_CHOICES else SKY_EVENING_CHOICES,
+                    recommended = if (morning) {
+                        ru.e1173.nookast.preferences.DEFAULT_SKY_MORNING_FROM_MINUTES
+                    } else {
+                        ru.e1173.nookast.preferences.DEFAULT_SKY_EVENING_UNTIL_MINUTES
+                    },
+                    minHeight = touchTarget.compactRow(),
+                    onSelect = { preferences.setSkyClock(mood, it) },
+                )
+            }
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 2.dp),
                 color = MaterialTheme.colorScheme.outlineVariant,
@@ -1483,14 +1515,6 @@ private fun PalettePanel(touchTarget: Dp) {
             }
         }
     }
-}
-
-private fun ru.e1173.nookast.designsystem.ThemePalette.labelResource(): Int = when (this) {
-    ru.e1173.nookast.designsystem.ThemePalette.LAVENDER -> R.string.settings_palette_lavender
-    ru.e1173.nookast.designsystem.ThemePalette.AUTUMN -> R.string.settings_palette_autumn
-    ru.e1173.nookast.designsystem.ThemePalette.WINTER -> R.string.settings_palette_winter
-    ru.e1173.nookast.designsystem.ThemePalette.MINT -> R.string.settings_palette_mint
-    ru.e1173.nookast.designsystem.ThemePalette.SIGNATURE -> R.string.settings_palette_signature
 }
 
 @Composable
@@ -2304,6 +2328,71 @@ private fun SkyPlaceSettings(
                 color = if (problem != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+        }
+    }
+}
+
+/** The morning's start: an earlier hour than the dawn of a dark season, or by the sun alone (null). */
+private val SKY_MORNING_CHOICES: List<Int?> = listOf(null, 4 * 60, 5 * 60, 5 * 60 + 30, 6 * 60, 6 * 60 + 30, 7 * 60, 8 * 60)
+
+/** The evening's end: a later hour than the dusk of a dark season, or by the sun alone (null). */
+private val SKY_EVENING_CHOICES: List<Int?> = listOf(null, 20 * 60, 21 * 60, 22 * 60, 22 * 60 + 30, 23 * 60, 23 * 60 + 30, 24 * 60)
+
+private fun clockLabel(minutes: Int): String = "%d:%02d".format((minutes / 60) % 24, minutes % 60)
+
+/** A sky's clock under its switch: the hour on the right, a tap opens the choices. */
+@Composable
+private fun SkyClockRow(
+    title: String,
+    help: String,
+    minutes: Int?,
+    choices: List<Int?>,
+    recommended: Int,
+    minHeight: Dp,
+    onSelect: (Int?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val bySun = stringResource(R.string.settings_sky_by_sun)
+    fun label(value: Int?) = value?.let(::clockLabel) ?: bySun
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = minHeight)
+            .clip(ru.e1173.nookast.designsystem.NookShapes.s)
+            .clickable { expanded = true }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                help,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        androidx.compose.foundation.layout.Box(Modifier.padding(start = 12.dp)) {
+            Text(
+                label(minutes),
+                style = MaterialTheme.typography.titleSmall,
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
+            )
+            ru.e1173.nookast.designsystem.NookMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                choices.forEach { value ->
+                    ru.e1173.nookast.designsystem.NookMenuItem(
+                        text = if (value == recommended) {
+                            stringResource(R.string.settings_sky_recommended, label(value))
+                        } else {
+                            label(value)
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(value)
+                        },
+                    )
+                }
+            }
         }
     }
 }

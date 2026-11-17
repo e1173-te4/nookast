@@ -61,6 +61,20 @@ class PodcastFeedClient(
         return parseFeedProblems(body).firstOrNull { it.podcastId == podcastId }
     }
 
+    /**
+     * «Refresh from feed»: the server reads the whole feed now even if it looks unchanged and updates
+     * the podcast's details and episodes (0.9.2 `refresh_podcast_details`). Details the user edited
+     * on the server stay: `reset_edits` is never sent. Throws when the server could not read it.
+     */
+    fun refreshDetails(session: AuthSession, podcastId: Int) {
+        val body = JSONObject().put("podcast_id", podcastId).put("reset_edits", false)
+        val response = call(session, "/api/data/refresh_podcast_details", "POST", body.toString())
+        val json = runCatching { JSONObject(response) }.getOrNull()
+        if (json != null && json.has("success") && !json.optBoolean("success")) {
+            throw FeedChangeRefused(json.optString("message"))
+        }
+    }
+
     /** The subscriptions the server keeps failing to read (0.9.1+); empty on older servers. */
     fun problems(session: AuthSession): List<ServerFeedProblem> = try {
         parseFeedProblems(call(session, "/api/data/feed_problems", "GET", null))

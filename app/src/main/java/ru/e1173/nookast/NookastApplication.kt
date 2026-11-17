@@ -33,6 +33,17 @@ class NookastApplication : Application() {
             graph.legacyMetadataBroadcast
             graph.syncScheduler.start()
         }
+        // On-device download cleanup (DEC-064): at start and on every return to the app; the runner
+        // itself keeps it to once in ten minutes.
+        startupScope.launch(Dispatchers.Main) {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                object : androidx.lifecycle.DefaultLifecycleObserver {
+                    override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+                        startupScope.launch(Dispatchers.IO) { runCatching { graph.downloadCleanup.run() } }
+                    }
+                },
+            )
+        }
         // Periodic work is durable but is not needed before the first useful frame.
         startupScope.launch {
             SyncWorkScheduler.ensurePeriodic(this@NookastApplication)

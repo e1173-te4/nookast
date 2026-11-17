@@ -34,6 +34,8 @@ class SyncEngine(
     /** The playback session the user is listening to now (§5.2, §5.5), or null. */
     private val activeSession: (episodeId: Int) -> String? = { null },
     private val random: Random = Random.Default,
+    /** Old id to merged id, after Room was remapped: downloads and server-copy marks follow (DEC-062). */
+    private val onEpisodeIdsMerged: suspend (Map<Int, Int>) -> Unit = {},
 ) {
     private val locks = ConcurrentHashMap<String, Mutex>()
 
@@ -136,8 +138,21 @@ class SyncEngine(
             state.intentCounter,
             SyncRepository.ServerKnowledge.AtLeast(state.positionMs / 1_000),
         )
-        if (inAutoCompleteWindow(state, acs)) observeAfterWrite(session, state.episodeId)
+        if (inAutoCompleteWindow(state, acs) || needsMergeCheck(state.episodeId)) observeAfterWrite(session, state.episodeId)
         return confirmed
+    }
+
+    /** Episodes whose id was read back once in this process (merge check, FINDINGS V-02). */
+    private val mergeChecked = ConcurrentHashMap.newKeySet<Int>()
+
+    /**
+     * On 0.9.1+ an id the app holds may have been merged into another episode at the upgrade. One
+     * read per episode and process shows it ([ServerEpisode.currentId]); 0.9.0 never merges.
+     */
+    private suspend fun needsMergeCheck(episodeId: Int): Boolean {
+        if (episodeId in mergeChecked) return false
+        if (!mergesIds(repository.serverVersion())) return false
+        return mergeChecked.add(episodeId)
     }
 
     private suspend fun deliverRewind(session: AuthSession, state: ProgressState, acs: Int): Boolean {
@@ -204,7 +219,37 @@ class SyncEngine(
 
     private suspend fun observeAfterWrite(session: AuthSession, episodeId: Int) {
         val ticket = repository.reserveTicket()
-        api.episode(session, episodeId)?.let { repository.observeProgress(ticket, it) }
+        val server = api.episode(session, episodeId) ?: return
+        if (server.currentId != episodeId) {
+            // The write reached the merged episode (the server rewrote the id); the local row follows.
+            merged(mapOf(episodeId to server.currentId))
+            repository.observeProgress(ticket, server.copy(episodeId = server.currentId))
+        } else {
+            repository.observeProgress(ticket, server)
+        }
+    }
+
+    private suspend fun merged(aliases: Map<Int, Int>) {
+        if (aliases.isEmpty()) return
+        repository.remapEpisodeIds(aliases)
+        runCatching { onEpisodeIdsMerged(aliases) }
+    }
+
+    /**
+     * Ids of [ids] the server merged into another episode (0.9.1+), from `get_episode_metadata`,
+     * which answers for the merged episode with its own `episodeid`. Deleted episodes are absent.
+     */
+    private fun aliasesOf(session: AuthSession, ids: Collection<Int>): Pair<Map<Int, Int>, Set<Int>> {
+        val aliases = mutableMapOf<Int, Int>()
+        val deleted = mutableSetOf<Int>()
+        ids.distinct().filter { it > 0 }.forEach { id ->
+            val episode = api.episode(session, id)
+            when {
+                episode == null -> deleted += id
+                episode.currentId != id -> aliases[id] = episode.currentId
+            }
+        }
+        return aliases to deleted
     }
 
     private fun inAutoCompleteWindow(state: ProgressState, acs: Int): Boolean {
@@ -230,6 +275,16 @@ class SyncEngine(
             val server = ServerQueueCanon.canonical(rows)
             val ready = repository.queueIntents().filterNot { it.operationId in waiting }
             if (ready.isEmpty()) return false
+            // A removal, move or anchor naming an id the server queue lacks may name an episode the
+            // server merged (0.9.1+): without the new id a removal would be confirmed but lost.
+            val absent = ready.flatMap(::referencedIds).filter { it !in server }
+            if (absent.isNotEmpty()) {
+                val aliases = aliasesOf(session, absent).first
+                if (aliases.isNotEmpty()) {
+                    merged(aliases)
+                    return@repeat
+                }
+            }
             val desired = QueueRebase.rebase(server, ready).filter { it > 0 }.distinct()
 
             val added = desired.filterNot { it in server }
@@ -246,8 +301,14 @@ class SyncEngine(
                 repository.confirmQueue(ready.map { it.operationId }, verified)
                 return true
             }
+            // Queued under another id: the server merged the episode and queued the merged one.
+            val (aliases, deleted) = aliasesOf(session, added.filter { it !in verified })
+            if (aliases.isNotEmpty()) {
+                merged(aliases)
+                return@repeat
+            }
             // Queued but invisible: the episode was deleted on the server (S53, orphan rows).
-            val orphans = added.filter { it !in verified && api.episode(session, it) == null }
+            val orphans = deleted.toList()
             if (orphans.isNotEmpty()) {
                 orphans.forEach { api.removeQueued(session, it) }
                 repository.deadLetterQueueIntents(
@@ -260,6 +321,14 @@ class SyncEngine(
             // Otherwise another client edited the queue in between: retry on a fresh read.
         }
         throw SyncCallException(SyncFailure.TRANSIENT, excerpt = "queue changed concurrently")
+    }
+
+    /** Ids an intent refers to other than the one it adds: subjects of REMOVE/MOVE, AFTER anchors. */
+    private fun referencedIds(intent: QueueIntent): List<Int> = when (intent) {
+        is QueueIntent.Add -> listOfNotNull(intent.anchor.episodeId)
+        is QueueIntent.Move -> listOfNotNull(intent.episodeId, intent.anchor.episodeId)
+        is QueueIntent.Remove -> listOf(intent.episodeId)
+        is QueueIntent.Clear -> emptyList()
     }
 
     // --- Saved episodes and subscriptions (§7) ---
@@ -324,10 +393,13 @@ class SyncEngine(
         }
     }
 
+    // Once per run of the app: the version was never read again once auto-complete was saved, and the
+    // request went without its key (401), so Settings showed a dash (user, 13.11.2026; DEC-069 audit).
     private suspend fun refreshServerSettings(session: AuthSession) {
-        if (repository.autoCompleteSeconds() != null) return
+        if (serverSettingsRead && repository.autoCompleteSeconds() != null) return
         runCatching { api.autoCompleteSeconds(session) }.onSuccess { seconds ->
-            repository.saveServerSettings(seconds, api.version(session))
+            repository.saveServerSettings(seconds, api.version(session) ?: repository.serverVersion())
+            serverSettingsRead = true
         }.onFailure { error ->
             if (error is SyncCallException && error.failure == SyncFailure.AUTH) throw AuthStop()
         }
@@ -390,7 +462,21 @@ class SyncEngine(
 
     private class AuthStop : Exception()
 
+    /** PinePods 0.9.1 introduced EpisodeIDAliases; an unknown version is treated as able to merge. */
+    internal fun mergesIds(version: String?): Boolean {
+        val parts = version?.trim()?.removePrefix("v")?.split('.')?.map { it.takeWhile(Char::isDigit).toIntOrNull() }
+            ?: return true
+        val major = parts.getOrNull(0) ?: return true
+        val minor = parts.getOrNull(1) ?: 0
+        val patch = parts.getOrNull(2) ?: 0
+        return major > 0 || minor > 9 || (minor == 9 && patch >= 1)
+    }
+
     companion object {
+        /** The server's settings and version were read in this run of the app. */
+        @Volatile
+        private var serverSettingsRead = false
+
         const val QUEUE = "queue"
         const val CONFLICT_AHEAD = "CONFLICT_AHEAD"
         const val EPISODE_DELETED = "EPISODE_DELETED"

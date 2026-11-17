@@ -69,9 +69,16 @@ private val SunsetCoral = Color(0xFFFF9472)
 
 /**
  * The mood from where the sun actually is over the place (user, 29.10.2026: one switch, driven by
- * the sun): white nights while it is below the horizon in their season, the morning from nautical
- * dawn until it stands 12° high or reaches noon, the evening (user, 29.10.2026) the same way down
- * from 12° to nautical dusk, nothing otherwise. Each mood is switched on its own under «Immersion».
+ * the sun): white nights while it is below the horizon in their season; the morning from nautical
+ * dawn until the sun stands 12° high or noon comes, the evening from 12° on the way down to nautical
+ * dusk; nothing otherwise. Each mood is switched on its own under «Immersion».
+ *
+ * The clock lengthens both into the dark (user, 14.11.2026: on the drive the screen must not look
+ * like night yet): from [morningFromHours] the morning grows over an hour to [CLOCK_HOLD] and meets
+ * the dawn; the evening keeps [CLOCK_HOLD] after dusk and fades out over the hour before
+ * [eveningUntilHours]. Null leaves the mood to the sun alone. The clock only lengthens: where the
+ * sun gives more, the sun wins. In the white-night season the night under the horizon belongs to
+ * the white nights, even when they are off.
  */
 internal fun skyState(
     now: ZonedDateTime,
@@ -80,28 +87,46 @@ internal fun skyState(
     morning: Boolean = true,
     whiteNights: Boolean = true,
     evening: Boolean = true,
+    morningFromHours: Double? = DEFAULT_MORNING_FROM_HOURS,
+    eveningUntilHours: Double? = DEFAULT_EVENING_UNTIL_HOURS,
 ): SkyState {
     val hours = now.hour + now.minute / 60.0 + now.second / 3_600.0
     val day = now.dayOfYear
     val offsetHours = now.offset.totalSeconds / 3_600.0
     val noon = solarNoonLocalHours(day, longitude, offsetHours)
     val elevation = solarElevationDegrees(day, hours - noon, latitude)
-    if (whiteNights && isWhiteNightSeason(day, latitude) && elevation < SUNRISE_ELEVATION) {
+    val whiteNightHours = isWhiteNightSeason(day, latitude) && elevation < SUNRISE_ELEVATION
+    if (whiteNights && whiteNightHours) {
         // Fuller as the sun sinks: half at sunset, all of it 4° below.
         val depth = ((SUNRISE_ELEVATION - elevation) / 3.2).coerceIn(0.0, 1.0)
         return SkyState(SkyMood.WHITE_NIGHT, (0.5 + 0.5 * depth).toFloat())
     }
     val afternoon = hours >= noon
-    if (elevation < MORNING_FROM_ELEVATION || elevation > MORNING_UNTIL_ELEVATION) return SkyState.None
     if (if (afternoon) !evening else !morning) return SkyState.None
-    val intensity = when {
-        elevation < MORNING_FULL_ELEVATION ->
-            0.35 + 0.65 * (elevation - MORNING_FROM_ELEVATION) / (MORNING_FULL_ELEVATION - MORNING_FROM_ELEVATION)
-        elevation < MORNING_FADE_ELEVATION -> 1.0
-        else -> 1.0 - 0.8 * (elevation - MORNING_FADE_ELEVATION) / (MORNING_UNTIL_ELEVATION - MORNING_FADE_ELEVATION)
-    }
-    // The evening mirrors the morning: it starts faint high up and is fullest around sunset.
-    return SkyState(if (afternoon) SkyMood.EVENING else SkyMood.MORNING, intensity.toFloat().coerceIn(0f, 1f))
+    if (whiteNightHours || elevation > MORNING_UNTIL_ELEVATION) return SkyState.None
+    val bySun = if (elevation >= MORNING_FROM_ELEVATION) sunProfile(elevation, SUN_FLOOR) else 0.0
+    // The clock's share: a ramp over the hour after the morning's start or before the evening's end.
+    val clock = if (afternoon) {
+        eveningUntilHours?.let { ((it - hours) / CLOCK_RAMP_HOURS).coerceIn(0.0, 1.0) }
+    } else {
+        morningFromHours?.let { ((hours - it) / CLOCK_RAMP_HOURS).coerceIn(0.0, 1.0) }
+    } ?: 0.0
+    val intensity = maxOf(bySun, sunProfile(elevation, CLOCK_HOLD) * clock).toFloat().coerceIn(0f, 1f)
+    if (intensity <= 0f) return SkyState.None
+    return SkyState(if (afternoon) SkyMood.EVENING else SkyMood.MORNING, intensity)
+}
+
+/**
+ * The light by the sun's height, the same for the morning and the evening: [floor] at nautical
+ * twilight and below, full from 4° under the horizon to 6° above it, then down to a fifth at 12°.
+ */
+private fun sunProfile(elevation: Double, floor: Double): Double = when {
+    elevation > MORNING_FADE_ELEVATION ->
+        1.0 - 0.8 * (elevation - MORNING_FADE_ELEVATION) / (MORNING_UNTIL_ELEVATION - MORNING_FADE_ELEVATION)
+    elevation >= MORNING_FULL_ELEVATION -> 1.0
+    elevation > MORNING_FROM_ELEVATION ->
+        floor + (1.0 - floor) * (elevation - MORNING_FROM_ELEVATION) / (MORNING_FULL_ELEVATION - MORNING_FROM_ELEVATION)
+    else -> floor
 }
 
 /** The sun's height above the horizon in degrees, [hoursFromNoon] local solar hours from noon. */
@@ -143,6 +168,17 @@ private const val MORNING_FULL_ELEVATION = -4.0
 private const val MORNING_FADE_ELEVATION = 6.0
 private const val MORNING_UNTIL_ELEVATION = 12.0
 private const val WHITE_NIGHT_DEPRESSION_DEGREES = 8.0
+
+/** The sun's light at nautical twilight, where the moods used to begin and end. */
+private const val SUN_FLOOR = 0.35
+
+/** What the clock keeps of the light in the dark before dawn and after dusk. */
+private const val CLOCK_HOLD = 0.7
+private const val CLOCK_RAMP_HOURS = 1.0
+
+/** The recommended clock (user, 14.11.2026): the morning from 6:00, the evening until 23:00. */
+const val DEFAULT_MORNING_FROM_HOURS = 6.0
+const val DEFAULT_EVENING_UNTIL_HOURS = 23.0
 
 /**
  * The cover's main colour while Now Playing shows its wash; the sky takes part of it so the two

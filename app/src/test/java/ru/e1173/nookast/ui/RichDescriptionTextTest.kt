@@ -88,6 +88,33 @@ class RichDescriptionTextTest {
     }
 
     @Test
+    fun `a meet-up hour above the list is not a chapter`() {
+        // «Животные в Студии», episode 270 (user, 14.11.2026).
+        val text = "СХОДКА СЛУШАТЕЛЕЙ!\n\n21 ноября, суббота. 18:00.\n\nFreedom Bar — Москва.\n\nТемы выпуска:\n\n" +
+            "– 08:47 Секс с фиолетовым ИИ-осьминогом;\n\n– 23:51 Street Fighter;\n\n– 01:32:50 Lies of P.\n\nСлушать:"
+
+        val chapters = descriptionChapterList(text)
+
+        assertEquals(listOf(527_000L, 1_431_000L, 5_570_000L), chapters.map(DescriptionTimestamp::positionMs))
+        assertEquals(
+            "СХОДКА СЛУШАТЕЛЕЙ!\n\n21 ноября, суббота. 18:00.\n\nFreedom Bar — Москва.\n\nТемы выпуска:\n\nСлушать:",
+            descriptionWithoutTimestampList(text),
+        )
+    }
+
+    @Test
+    fun `chapters go forward even when every time opens its line`() {
+        val chapters = descriptionChapterList("19:00 Сбор у входа\n00:00 Вступление\n05:00 Новости\n12:00 Итоги")
+        assertEquals(listOf(0L, 300_000L, 720_000L), chapters.map(DescriptionTimestamp::positionMs))
+    }
+
+    @Test
+    fun `a list written at the ends of lines keeps its shape`() {
+        val chapters = descriptionChapterList("Вступление — 00:00\nНовости — 05:00\nИтоги — 12:00")
+        assertEquals(listOf(0L, 300_000L, 720_000L), chapters.map(DescriptionTimestamp::positionMs))
+    }
+
+    @Test
     fun `short lines keep their own line breaks`() {
         val source = "Треклист:\nBobina - Intro\nMars Shadow - Out There"
         assertEquals(source, normalizeDescriptionPlainText(source))

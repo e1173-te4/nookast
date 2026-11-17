@@ -17,6 +17,11 @@ internal object PlaybackActivity {
     var pausedAtElapsedMs: Long = 0L
         private set
 
+    /** The episode the player has loaded, playing or paused: the download cleanup never touches it. */
+    @Volatile
+    var openEpisodeId: Int? = null
+        internal set
+
     /** Car controllers (Android Auto and head units) connected to the media session right now. */
     private val carControllers = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 

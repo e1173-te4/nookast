@@ -102,7 +102,8 @@ class SoundProcessorTest {
         assertEquals(configures, processor.configures)
         assertEquals(flushes, processor.flushes)
         assertTrue(processor.isActive)
-        val delay = 240
+        // The limiter's 5 ms lookahead and the soft clipper's filters (DEC-071).
+        val delay = 240 + SoftClipper.LATENCY
         assertEquals(framesIn - delay, framesOut)
     }
 
@@ -241,6 +242,7 @@ class SoundProcessorTest {
         for ((clarity, depth) in cases) {
             for (frequency in listOf(60.0, 110.0, 300.0, 1_000.0, 3_000.0, 8_000.0)) {
                 val processor = configured(rate, 1)
+                processor.analytic = true
                 processor.parameters = SoundParameters(clarity = clarity, depth = depth)
                 val input = sine(rate, 1, frequency, -30.0, seconds = 4.0)
                 val output = run(processor, input, 1, intArrayOf(4_096))
@@ -252,39 +254,20 @@ class SoundProcessorTest {
     }
 
     @Test
-    fun `depth shelf is off on the built-in speaker, its cut stays`() {
+    fun `depth shelf and its cut are off on the built-in speaker`() {
         val rate = 48_000
         val processor = configured(rate, 1)
+        processor.analytic = true
         processor.parameters = SoundParameters(depth = 3, speakerRoute = true)
         val input = sine(rate, 1, 110.0, -30.0, seconds = 2.0)
         val output = run(processor, input, 1, intArrayOf(4_096))
         val measured = 20 * log10(rms(output, rate, rate / 2) / rms(input, rate, rate / 2))
-        assertEquals(peakingDb(rate, 110.0, 280.0, 1.2, -3.0), measured, 1.0)
+        // On the speaker the shelf and the cut that balances it are both off (DEC-071): only the high-pass.
+        val expected = highPassDb(rate, 110.0, 50.0)
+        assertEquals(expected, measured, 1.0)
     }
 
     // e)
-
-    @Test
-    fun `the clarity compressor shrinks a 12 dB difference to 12 over its ratio`() {
-        val rate = 48_000
-        for ((step, ratio) in listOf(1 to 1.5, 2 to 2.0, 3 to 3.0)) {
-            val processor = configured(rate, 1)
-            processor.parameters = SoundParameters(clarity = step)
-            val burst = rate / 2
-            val input = ShortArray(rate * 8)
-            for (i in input.indices) {
-                val loud = (i / burst) % 2 == 0
-                val amplitude = 10.0.pow((if (loud) -20.0 else -32.0) / 20) * sqrt(2.0)
-                input[i] = (sin(2 * PI * 1_000.0 * i / rate) * amplitude * 32_767).toInt().toShort()
-            }
-            val output = run(processor, input, 1, intArrayOf(4_096))
-            // The last pair, each burst over its settled last quarter (the release is 150 ms).
-            val loud = rms(output, 13 * burst - burst / 4, burst / 4)
-            val quiet = rms(output, 14 * burst - burst / 4, burst / 4)
-            val difference = 20 * log10(loud / quiet)
-            assertEquals("clarity $step", 12 / ratio, difference, 1.5)
-        }
-    }
 
     // f)
 
@@ -352,7 +335,9 @@ class SoundProcessorTest {
             for (start in 0..output.size - 3 * rate step rate / 2) {
                 loudest = maxOf(loudest, referenceLufs(output, rate, start, 3 * rate) + DUAL_MONO_LU)
             }
-            assertTrue("$level LUFS: loudest short-term $loudest", loudest < -6.0)
+            // DEC-071: the user asked for more headroom; with everything at its maximum (+36 dB on the speaker) the
+            // dense mode stays under -2 LUFS, and no sample passes the ceiling.
+            assertTrue("$level LUFS: loudest short-term $loudest", loudest < -2.0)
         }
     }
 
@@ -419,18 +404,6 @@ class SoundProcessorTest {
         val early = rms(after, rate * 34 / 100, rate / 10)
         val late = rms(after, rate * 434 / 100, rate / 10)
         assertEquals(0.0, 20 * log10(early / late), 2.0)
-    }
-
-    @Test
-    fun `R5 clarity has no loud first moments before the compressor works`() {
-        val rate = 48_000
-        val steady = steadySpeech(rate, seconds = 3.0, lufs = -30.0)
-        val processor = configured(rate, 1)
-        processor.parameters = SoundParameters(clarity = 3)
-        val output = run(processor, steady, 1, intArrayOf(4_096))
-        val first = rms(output, rate / 10, rate / 5)
-        val settled = rms(output, 2 * rate, rate)
-        assertEquals(0.0, 20 * log10(first / settled), 1.5)
     }
 
     @Test
@@ -569,24 +542,35 @@ class SoundProcessorTest {
         return hypot(re, im) * 2 / x.size
     }
 
-    /** The specified tone filters' magnitude, from their transfer functions on the unit circle. */
+    /** The specified tone filters' magnitude (DEC-071), from their transfer functions on the unit circle. */
     private fun expectedToneDb(rate: Int, f: Double, clarity: Int, depth: Int): Double {
         var db = 0.0
-        var cut300 = doubleArrayOf(0.0, -1.5, -3.0, -4.0)[clarity]
-        var cut280 = doubleArrayOf(0.0, -1.0, -2.0, -3.0)[depth]
-        if (cut300 + cut280 < -5.0) {
-            val scale = -5.0 / (cut300 + cut280)
-            cut300 *= scale
-            cut280 *= scale
-        }
+        if (clarity > 0 || depth > 0) db += highPassDb(rate, f, if (depth > 0) 50.0 else 85.0)
         if (clarity > 0) {
-            db += highPassDb(rate, f, if (depth > 0) 60.0 else 90.0)
-            db += peakingDb(rate, f, 3_000.0, 0.8, doubleArrayOf(0.0, 2.0, 4.0, 5.0)[clarity])
+            db += peakingDb(rate, f, 250.0, 1.4, doubleArrayOf(0.0, -1.0, -1.5, -2.0)[clarity])
+            db += parallelBellDb(rate, f, 3_200.0, 0.7, doubleArrayOf(0.0, 2.5, 4.0, 5.5)[clarity])
         }
-        if (cut300 != 0.0) db += peakingDb(rate, f, 300.0, 1.0, cut300)
-        if (depth > 0) db += lowShelfDb(rate, f, 110.0, 0.8, doubleArrayOf(0.0, 2.0, 4.0, 6.0)[depth])
-        if (cut280 != 0.0) db += peakingDb(rate, f, 280.0, 1.2, cut280)
+        if (depth > 0) {
+            db += lowShelfDb(rate, f, 260.0, 0.8, doubleArrayOf(0.0, 2.5, 4.5, 7.0)[depth])
+            db += peakingDb(rate, f, 320.0, 1.1, doubleArrayOf(0.0, -1.5, -2.5, -3.5)[depth])
+        }
         return db
+    }
+
+    /** |1 + (g − 1) · BP(f)|: a band-pass of 0 dB peak added in parallel, the presence lift. */
+    private fun parallelBellDb(rate: Int, f: Double, f0: Double, q: Double, gainDb: Double): Double {
+        val w0 = 2 * PI * f0 / rate
+        val alpha = sin(w0) / (2 * q)
+        val w = 2 * PI * f / rate
+        val nr = alpha - alpha * cos(-2 * w)
+        val ni = -alpha * sin(-2 * w)
+        val dr = 1 + alpha - 2 * cos(w0) * cos(-w) + (1 - alpha) * cos(-2 * w)
+        val di = -2 * cos(w0) * sin(-w) + (1 - alpha) * sin(-2 * w)
+        val d = dr * dr + di * di
+        val hr = (nr * dr + ni * di) / d
+        val hi = (ni * dr - nr * di) / d
+        val g = 10.0.pow(gainDb / 20) - 1
+        return 20 * log10(hypot(1 + g * hr, g * hi))
     }
 
     private fun magnitudeDb(rate: Int, f: Double, b: DoubleArray, a: DoubleArray): Double {

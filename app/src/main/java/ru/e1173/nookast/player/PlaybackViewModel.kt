@@ -92,6 +92,22 @@ data class PlaybackUiState(
     val diagnosticsRunning: Boolean = false,
     val diagnosticResults: List<EndpointProbeResult> = emptyList(),
     val error: PlaybackError? = null,
+    /** The internet, the server and the host, each on its own (DEC-069). */
+    val probes: ConnectionProbes = ConnectionProbes(),
+    /** A hold on the source pill: its check and result. */
+    val quickCheck: QuickCheck? = null,
+    /** The buffer at the line, as the pill shows it. */
+    val runway: RunwayStatus = RunwayStatus(),
+    /** Media3's estimate of the network's speed in bits per second; 0 while unknown. */
+    val bandwidthBitsPerSecond: Long = 0L,
+    /** The episode's host (its RSS file), whichever source plays. */
+    val originHost: String = "",
+    val serverHost: String = "",
+    val currentPodcastId: Int? = null,
+    /** «Этот подкаст всегда через сервер» for the playing podcast. */
+    val alwaysViaServer: Boolean = false,
+    /** The playing podcast's host failed in an earlier episode: a second failure offers the switch. */
+    val hostFailedBefore: Boolean = false,
 )
 
 data class PlaybackChapter(
@@ -147,6 +163,21 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     private var diagnosticsJob: Job? = null
     private var mediaTechnicalInfoJob: Job? = null
     private var activeSourceUrl: String? = null
+    private val runwayWatch = RunwayWatch()
+    private val routes = PodcastRouteStore(application)
+    private var quickJob: Job? = null
+    private var podcastLookupEpisodeId: Int? = null
+    private var wasPlaying = false
+    private var hostFailureMarked: Int? = null
+
+    private val connectivity = application.getSystemService(android.net.ConnectivityManager::class.java)
+
+    // No validated network: the internet is down at once, without waiting for a check (DEC-069).
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) = refreshInternet()
+
+        override fun onLost(network: android.net.Network) = refreshInternet()
+    }.also { callback -> runCatching { connectivity?.registerDefaultNetworkCallback(callback) } }
     private var activeTechnicalInfoSource: String? = null
     private var lastProbeStartedElapsedMs: Long = 0
 
@@ -564,32 +595,210 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         scheduleStreamProbe(force = true)
     }
 
+    /**
+     * «Check connection» (DEC-069): the internet (Google or Yandex: where one of them is blocked the
+     * other tells whether the internet works, user 11.11.2026), the PinePods server's health check and
+     * the episode's host, each on its own. Every answer shows as soon as it comes; the rows of
+     * Settings get the same results. X-10: no personal or third-party hosts beyond these.
+     */
     fun runExtendedDiagnostics() {
         if (diagnosticsJob?.isActive == true) return
-        // The current source (its server's health check for PinePods media), the PinePods server and
-        // a neutral connectivity check (X-10: no personal or third-party hosts from every install).
-        val targets = buildList {
-            activeSourceUrl?.let { add(pinePodsHealthUrl(it) ?: it) }
-            sessionStore.load()?.serverUrl?.let { server ->
-                ru.e1173.nookast.auth.ServerAddress.normalize(server).getOrNull()
-                    ?.resolve(PINEPODS_HEALTH_PATH)?.toString()?.let(::add)
-            }
-            add(StreamReachabilityClient.CONNECTIVITY_CHECK_URL)
-            // Yandex next to Google (user, 11.11.2026): where one of them is blocked, the other tells
-            // whether the internet itself works.
-            add(StreamReachabilityClient.YANDEX_CHECK_URL)
-        }.distinct()
-        _state.update { it.copy(diagnosticsRunning = true, diagnosticResults = emptyList()) }
+        val targets = checkTargets()
+        val checkedSource = activeSourceUrl
+        _state.update {
+            it.copy(
+                diagnosticsRunning = true,
+                diagnosticResults = emptyList(),
+                probes = it.probes.copy(
+                    internet = it.probes.internet.running(),
+                    server = if (targets.server != null) it.probes.server.running() else it.probes.server,
+                    origin = if (targets.origin != null) it.probes.origin.running() else it.probes.origin,
+                    running = true,
+                ),
+            )
+        }
         diagnosticsJob = viewModelScope.launch {
-            val results = withContext(Dispatchers.IO) {
-                coroutineScope {
-                    targets.map { url ->
-                        async { reachabilityClient.probe(url, probeHeaders(url)) }
-                    }.awaitAll()
+            val results = mutableListOf<EndpointProbeResult>()
+            probeEach(targets) { node, result -> results += result.all; applyProbe(node, result) }
+            _state.update {
+                val sourceNode = when {
+                    checkedSource == null || checkedSource != activeSourceUrl -> null
+                    isServerStream(checkedSource) || pinePodsHealthUrl(checkedSource) != null -> it.probes.server
+                    else -> it.probes.origin
+                }
+                it.copy(
+                    diagnosticsRunning = false,
+                    diagnosticResults = results,
+                    probes = it.probes.copy(running = false, checkedAtElapsedMs = SystemClock.elapsedRealtime()),
+                    // The status above the results agrees with them.
+                    streamReachability = when {
+                        it.streamReachability == StreamReachability.LOCAL -> it.streamReachability
+                        sourceNode?.status == ProbeStatus.OK -> StreamReachability.AVAILABLE
+                        sourceNode?.status == ProbeStatus.FAIL -> StreamReachability.UNAVAILABLE
+                        else -> it.streamReachability
+                    },
+                )
+            }
+        }
+    }
+
+    /** A 500 ms hold on the source pill: the same three checks, the result in the pill for 2 s. */
+    fun quickCheck() {
+        if (quickJob?.isActive == true || _state.value.isLocalSource) return
+        val targets = checkTargets()
+        _state.update { it.copy(quickCheck = QuickCheck(running = true)) }
+        quickJob = viewModelScope.launch {
+            var internet = ProbeStatus.UNKNOWN
+            var server = NodeProbe()
+            var origin = NodeProbe()
+            probeEach(targets) { node, result ->
+                applyProbe(node, result)
+                val answered = NodeProbe().answered(result.ok, result.latencyMs)
+                when (node) {
+                    Node.INTERNET -> internet = answered.status
+                    Node.SERVER -> server = answered
+                    Node.ORIGIN -> origin = answered
                 }
             }
-            _state.update { it.copy(diagnosticsRunning = false, diagnosticResults = results) }
+            _state.update {
+                it.copy(
+                    quickCheck = QuickCheck(running = false, internet = internet, server = server, origin = origin),
+                    probes = it.probes.copy(checkedAtElapsedMs = SystemClock.elapsedRealtime()),
+                )
+            }
+            delay(QUICK_RESULT_MS)
+            _state.update { it.copy(quickCheck = null) }
         }
+    }
+
+    private enum class Node { INTERNET, SERVER, ORIGIN }
+
+    private class CheckTargets(val server: String?, val origin: String?)
+
+    private class NodeResult(val ok: Boolean, val latencyMs: Long, val all: List<EndpointProbeResult>)
+
+    private fun checkTargets(): CheckTargets {
+        val server = sessionStore.load()?.serverUrl?.let { url ->
+            ru.e1173.nookast.auth.ServerAddress.normalize(url).getOrNull()?.resolve(PINEPODS_HEALTH_PATH)?.toString()
+        }
+        val origin = originUrl(controller?.currentMediaItem).takeUnless { _state.value.isLocalSource }
+        return CheckTargets(server, origin)
+    }
+
+    private suspend fun probeEach(targets: CheckTargets, onResult: (Node, NodeResult) -> Unit) = coroutineScope {
+        launch {
+            val both = withContext(Dispatchers.IO) {
+                listOf(StreamReachabilityClient.CONNECTIVITY_CHECK_URL, StreamReachabilityClient.YANDEX_CHECK_URL)
+                    .map { url -> async { reachabilityClient.probe(url) } }
+                    .awaitAll()
+            }
+            val ok = both.filter(EndpointProbeResult::isAvailable)
+            onResult(Node.INTERNET, NodeResult(ok.isNotEmpty(), ok.minOfOrNull(EndpointProbeResult::latencyMs) ?: 0L, both))
+        }
+        targets.server?.let { url ->
+            launch {
+                val r = withContext(Dispatchers.IO) { reachabilityClient.probe(url, probeHeaders(url)) }
+                onResult(Node.SERVER, NodeResult(r.isAvailable, r.latencyMs, listOf(r)))
+            }
+        }
+        targets.origin?.let { url ->
+            launch {
+                val r = withContext(Dispatchers.IO) { reachabilityClient.probe(url, probeHeaders(url)) }
+                onResult(Node.ORIGIN, NodeResult(r.isAvailable, r.latencyMs, listOf(r)))
+            }
+        }
+    }
+
+    private fun applyProbe(node: Node, result: NodeResult) {
+        _state.update {
+            val p = it.probes
+            it.copy(
+                probes = when (node) {
+                    Node.INTERNET -> p.copy(internet = p.internet.answered(result.ok, result.latencyMs))
+                    Node.SERVER -> p.copy(server = p.server.answered(result.ok, result.latencyMs))
+                    Node.ORIGIN -> p.copy(origin = p.origin.answered(result.ok, result.latencyMs))
+                },
+            )
+        }
+    }
+
+    /** Media3's estimate of the network's speed (DEC-069); 0 while unknown. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun bandwidthEstimate(): Long = runCatching { androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.getSingletonInstance(getApplication()).bitrateEstimate }.getOrDefault(0L)
+
+    /** The episode's own file on its host: the RSS enclosure, never the PinePods copy. */
+    private fun originUrl(item: MediaItem?): String? {
+        val extras = item?.mediaMetadata?.extras ?: return null
+        val session = sessionStore.load()
+        return listOfNotNull(extras.getString(EXTRA_PRIMARY_MEDIA_URL), extras.getString(EXTRA_FALLBACK_MEDIA_URL))
+            .firstOrNull { url -> session == null || !MediaSourceResolver.isPinePodsMediaRequest(session.serverUrl, url) }
+    }
+
+    /** No validated network means no internet at once; its return checks the internet again. */
+    private fun refreshInternet() {
+        val capabilities = runCatching { connectivity?.getNetworkCapabilities(connectivity.activeNetwork) }.getOrNull()
+        val validated = capabilities?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        viewModelScope.launch {
+            val before = _state.value.probes.internet.status
+            if (!validated && before != ProbeStatus.FAIL) {
+                _state.update { it.copy(probes = it.probes.copy(internet = it.probes.internet.answered(false, 0L))) }
+            } else if (validated && before == ProbeStatus.FAIL && diagnosticsJob?.isActive != true) {
+                runExtendedDiagnostics()
+            }
+        }
+    }
+
+    /** The playing episode's podcast: its «always via server» and whether its host failed before. */
+    private fun lookUpPodcast(episodeId: Int, local: Boolean) {
+        podcastLookupEpisodeId = episodeId
+        hostFailureMarked = null
+        viewModelScope.launch {
+            val session = withContext(Dispatchers.IO) { sessionStore.load() } ?: return@launch
+            val podcastId = withContext(Dispatchers.IO) {
+                database.offlineCacheDao().getCurrentPlaybackContext()?.takeIf { it.pinePodsEpisodeId == episodeId }?.podcastId
+                    ?: database.offlineCacheDao().findEpisodeByPinePodsId(episodeId)?.podcastId
+            } ?: return@launch
+            val account = ru.e1173.nookast.core.sync.AccountIdentity.of(session).fingerprint
+            val always = routes.alwaysViaServer(account, podcastId)
+            _state.update {
+                if (it.currentEpisodeId != episodeId) {
+                    it
+                } else {
+                    it.copy(currentPodcastId = podcastId, alwaysViaServer = always, hostFailedBefore = routes.hostFailedBefore(account, podcastId))
+                }
+            }
+            // «Всегда через сервер»: the episode goes to the server and sound moves to its copy.
+            val now = _state.value
+            if (always && !local && !now.isOnServer && !now.isServerCopySource && now.serverDownload !is ServerDownloadProgress.Running) downloadCurrentToServer()
+        }
+    }
+
+    /** The host failed for this podcast (its rescue or a failed check): the next failure offers the switch. */
+    private fun noteHostFailure() {
+        val s = _state.value
+        val podcastId = s.currentPodcastId ?: return
+        val episodeId = s.currentEpisodeId ?: return
+        if (hostFailureMarked == episodeId) return
+        val failed = s.isUsingPinePodsFallback || s.originStalled || s.probes.origin.status == ProbeStatus.FAIL
+        if (!failed) return
+        hostFailureMarked = episodeId
+        val session = sessionStore.load() ?: return
+        routes.markHostFailed(ru.e1173.nookast.core.sync.AccountIdentity.of(session).fingerprint, podcastId)
+    }
+
+    /** «Этот подкаст всегда через сервер»; turned on, the playing episode moves to the server's copy. */
+    fun setAlwaysViaServer(on: Boolean) {
+        val podcastId = _state.value.currentPodcastId ?: return
+        val session = sessionStore.load() ?: return
+        routes.setAlwaysViaServer(ru.e1173.nookast.core.sync.AccountIdentity.of(session).fingerprint, podcastId, on)
+        _state.update { it.copy(alwaysViaServer = on) }
+        val s = _state.value
+        if (on && !s.isLocalSource && !s.isOnServer && !s.isServerCopySource) downloadCurrentToServer()
+    }
+
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        // A seek: the runway keeps quiet for its first 15 s, as after a start.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) runwayWatch.restart(SystemClock.elapsedRealtime())
     }
 
     private suspend fun autoCompletePreviousEpisodeIfEligible(nextEpisodeId: Int) {
@@ -758,10 +967,27 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             durationMs = duration.coerceAtLeast(0),
             bufferedAheadMs = bufferedAhead,
         )
+        // DEC-069: the runway at the line, the network's speed and the hosts of the card.
+        val now = SystemClock.elapsedRealtime()
+        val playingNow = player.isPlaying
+        if (item?.mediaId?.toIntOrNull() != _state.value.currentEpisodeId || (playingNow && !wasPlaying)) runwayWatch.restart(now)
+        wasPlaying = playingNow
+        val runway = runwayWatch.update(now, bufferedAhead, playingNow, localSource)
+        val bandwidth = bandwidthEstimate()
+        val originHost = originUrl(item)?.let(Uri::parse)?.host.orEmpty()
+        val serverHost = sessionStore.load()?.serverUrl?.let { ru.e1173.nookast.auth.ServerAddress.normalize(it).getOrNull()?.host }.orEmpty()
         _state.update {
             val episodeId = item?.mediaId?.toIntOrNull()
             val episodeChanged = episodeId != it.currentEpisodeId
             it.copy(
+                runway = runway,
+                bandwidthBitsPerSecond = bandwidth,
+                originHost = originHost,
+                serverHost = serverHost,
+                probes = if (sourceChanged || episodeChanged) it.probes.copy(origin = NodeProbe(), checkedAtElapsedMs = 0L) else it.probes,
+                currentPodcastId = if (episodeChanged) null else it.currentPodcastId,
+                alwaysViaServer = if (episodeChanged) false else it.alwaysViaServer,
+                hostFailedBefore = if (episodeChanged) false else it.hostFailedBefore,
                 currentEpisodeId = episodeId,
                 title = item?.mediaMetadata?.title?.toString().orEmpty(),
                 podcastName = item?.mediaMetadata?.artist?.toString().orEmpty(),
@@ -808,6 +1034,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
             )
         }
         item?.mediaId?.toIntOrNull()?.takeIf { it > 0 && it != feedChaptersEpisodeId }?.let(::loadFeedChapters)
+        item?.mediaId?.toIntOrNull()?.takeIf { it > 0 && it != podcastLookupEpisodeId }?.let { lookUpPodcast(it, localSource) }
+        noteHostFailure()
         if (remoteSourceUrl != null) scheduleStreamProbe(force = sourceChanged)
         if (technicalInfoSourceChanged && sourceUri != null) {
             scheduleMediaTechnicalInfo(sourceUri, duration.coerceAtLeast(0))
@@ -895,15 +1123,26 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             if (activeSourceUrl != sourceUrl) return@launch
+            val fromServer = pinePodsHealthUrl(sourceUrl) != null
             _state.update {
+                val reach = if (result.isAvailable) StreamReachability.AVAILABLE else StreamReachability.UNAVAILABLE
+                // The stream's own check is also its node's (DEC-069): the server for its copy, else the host.
+                val node = (if (fromServer) it.probes.server else it.probes.origin).answered(result.isAvailable, result.latencyMs)
                 it.copy(
-                    streamReachability = if (result.isAvailable) {
-                        StreamReachability.AVAILABLE
-                    } else {
-                        StreamReachability.UNAVAILABLE
-                    },
+                    streamReachability = reach,
                     streamHost = result.resolvedHost.ifBlank { result.requestedHost },
+                    // Results of a check made before the status changed describe another moment: the card
+                    // showed «no connection» over servers «available» (user, 14.11.2026).
+                    diagnosticResults = if (reach != it.streamReachability) emptyList() else it.diagnosticResults,
+                    probes = if (fromServer) it.probes.copy(server = node) else it.probes.copy(origin = node),
                 )
+            }
+            // Sound from the host: the server is checked beside it, so «Сервер недоступен» shows while sound plays.
+            if (!fromServer) {
+                checkTargets().server?.let { url ->
+                    val server = withContext(Dispatchers.IO) { reachabilityClient.probe(url, probeHeaders(url)) }
+                    _state.update { it.copy(probes = it.probes.copy(server = it.probes.server.answered(server.isAvailable, server.latencyMs))) }
+                }
             }
         }
     }
@@ -1016,6 +1255,8 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         playbackPreferences.unregisterListener(preferencesListener)
+        runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
+        quickJob?.cancel()
         connectJob?.cancel()
         positionJob?.cancel()
         queueSyncJob?.cancel()
@@ -1034,6 +1275,9 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
         private const val MAX_INCREMENTAL_PLAYLIST_EDITS = 3
         private const val PINEPODS_HEALTH_PATH = "/api/pinepods_check"
         private const val ORIGIN_STALL_OFFER_MS = 15_000L
+
+        // A hold on the pill shows its result for 2 s (DEC-069).
+        private const val QUICK_RESULT_MS = 2_000L
 
         /** Buffering shorter than this (a start, a seek, a micro-load) shows no spinner (user, 27.10.2026). */
         internal const val BUFFERING_REVEAL_MS = 1_500L

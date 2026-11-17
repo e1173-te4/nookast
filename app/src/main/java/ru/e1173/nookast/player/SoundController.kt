@@ -27,7 +27,13 @@ internal class SoundController(
     private val account: () -> String?,
     private val podcastIdOf: suspend (MediaItem) -> Int?,
     private val wideVehicleProfile: Boolean,
+    /** Frames Media3's silence skipper has dropped so far; it may restart from zero on a flush. */
+    private val skippedFrames: () -> Long = { 0L },
 ) {
+    // «Shorten pauses» (DEC-071): the silence removed in the current episode.
+    private var lastSkipped = 0L
+    private var skippedInEpisode = 0L
+
     private val store = SoundSettingsStore.open(context)
     private val preferences = SoundSettingsStore.preferences(context)
     private var slot: SoundSlot? = null
@@ -75,6 +81,9 @@ internal class SoundController(
         processor.freezeMemory()
         lookup?.cancel()
         mediaId = item?.mediaId
+        lastSkipped = skippedFrames()
+        skippedInEpisode = 0L
+        SoundSession.update { it.copy(skippedSilenceSeconds = 0) }
         if (item == null) return
         val key = "${item.mediaId}#${++episodes}"
         lookup = mainScope.launch {
@@ -107,9 +116,14 @@ internal class SoundController(
                 holdingFor = if (processor.limitingDb > HOLDING_DB) holdingFor + METER_INTERVAL_MS else 0L
                 val holding = holdingFor >= HOLDING_FOR_MS
                 val supported = processor.supported
+                val now = skippedFrames()
+                skippedInEpisode += if (now >= lastSkipped) now - lastSkipped else now
+                lastSkipped = now
+                val rate = processor.sampleRate
+                val skipped = if (rate > 0) (skippedInEpisode / rate).toInt() else 0
                 SoundSession.update {
-                    if (it.limiterHolding == holding && it.supported == supported) it
-                    else it.copy(limiterHolding = holding, supported = supported)
+                    if (it.limiterHolding == holding && it.supported == supported && it.skippedSilenceSeconds == skipped) it
+                    else it.copy(limiterHolding = holding, supported = supported, skippedSilenceSeconds = skipped)
                 }
             }
         }

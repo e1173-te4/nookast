@@ -102,8 +102,21 @@ internal fun SoundPopover(
                 model.changeGlobal { it.copy(depth = step) }
             }
             // The voice light rests while pauses are shortened: said where it happens (audit of З, R7).
-            val voiceRests = if (ru.e1173.nookast.preferences.VoiceLightSwitch.on) stringResource(R.string.sound_voice_light_rests) else null
-            SwitchRow(stringResource(R.string.sound_shorten_pauses), voiceRests, ui.global.shortenPauses, scale) { on ->
+            // What it does, said under it (DEC-071: the user did not see what the switch changes), and, while it is
+            // on, how much silence it has taken out of this episode.
+            val removed = ui.session.skippedSilenceSeconds
+            val pauses = listOfNotNull(
+                stringResource(R.string.sound_shorten_pauses_hint),
+                if (!ui.global.shortenPauses) {
+                    null
+                } else if (removed == 0) {
+                    stringResource(R.string.sound_shorten_pauses_none)
+                } else {
+                    stringResource(R.string.sound_shorten_pauses_removed, silenceText(removed))
+                },
+                if (ru.e1173.nookast.preferences.VoiceLightSwitch.on && ui.global.shortenPauses) stringResource(R.string.sound_voice_light_rests) else null,
+            ).joinToString("\n")
+            SwitchRow(stringResource(R.string.sound_shorten_pauses), pauses, ui.global.shortenPauses, scale) { on ->
                 model.changeGlobal { it.copy(shortenPauses = on) }
             }
             if (ui.session.speakerRoute) {
@@ -235,4 +248,12 @@ private fun CompareButton(scale: Float, onCompare: (Boolean) -> Unit) {
         }
         Text(description, style = NookType.meta.scaled(scale), color = colors.textSecondary)
     }
+}
+
+/** «1 мин 12 с» / "1 min 12 s"; seconds alone under a minute. */
+@Composable
+private fun silenceText(seconds: Int): String = if (seconds >= 60) {
+    stringResource(R.string.sound_minutes_seconds, seconds / 60, seconds % 60)
+} else {
+    stringResource(R.string.sound_seconds_short, seconds)
 }

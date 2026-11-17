@@ -45,12 +45,16 @@ class SyncDevice(
         override fun bootCount() = bootCount
     }
     val repository = SyncRepository(database, clock)
+
+    /** Every merge the engine reported to the app (downloads follow it). */
+    val merges = mutableListOf<Map<Int, Int>>()
     private val engine = SyncEngine(
         repository = repository,
         api = PinePodsSyncApi(),
         session = { session },
         activeSession = { activeSession },
         random = Random(1),
+        onEpisodeIdsMerged = { merges += it },
     )
 
     // --- Playback progress ---

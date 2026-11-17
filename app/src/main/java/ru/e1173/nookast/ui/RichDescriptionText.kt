@@ -93,7 +93,7 @@ internal fun extractDescriptionTimestamps(html: String): List<DescriptionTimesta
         normalizeDescriptionPlainText(html)
     }
     if (normalized.isBlank()) return emptyList()
-    val matches = timestampMatches(normalized)
+    val matches = chapterMatches(normalized)
     return matches.mapIndexedNotNull { index, match ->
         val positionMs = timestampSeconds(match) * 1_000L
         val nextStart = matches.getOrNull(index + 1)?.range?.first ?: normalized.length
@@ -115,10 +115,10 @@ internal fun descriptionChapterList(html: String): List<DescriptionTimestamp> =
  * before it) to the end of the last timestamp's line, as [descriptionChapterList] reads it.
  */
 internal fun descriptionWithoutTimestampList(normalized: String): String {
-    val matches = timestampMatches(normalized)
+    val matches = chapterMatches(normalized)
     if (matches.size < 2) return normalized
     var start = matches.first().range.first
-    while (start > 0 && normalized[start - 1] in "[({ \t") start--
+    while (start > 0 && normalized[start - 1] in "[({ \t-–—•*") start--
     val end = normalized.indexOf('\n', matches.last().range.last).let { if (it < 0) normalized.length else it }
     return listOf(normalized.substring(0, start).trimEnd(), normalized.substring(end).trimStart())
         .filter(String::isNotBlank)
@@ -145,7 +145,18 @@ internal fun RichDescriptionText(
             .ifBlank { fallback }
     }
     val links = remember(html, text) { descriptionLinks(html, text) }
-    val paragraphs = remember(text, links, accent, onSeekTo) {
+    // A time the chapter list rejected (a meet-up hour) is not a place in the episode either.
+    val notPlaces = remember(html) {
+        val full = normalizeDescriptionText(html)
+        val chapters = chapterMatches(full)
+        if (chapters.size < 2) {
+            emptySet()
+        } else {
+            val kept = chapters.map(::timestampSeconds).toSet()
+            timestampMatches(full).map(::timestampSeconds).filterNot(kept::contains).toSet()
+        }
+    }
+    val paragraphs = remember(text, links, accent, onSeekTo, notPlaces) {
         val linkStyle = TextLinkStyles(SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
         val timeStyle = TextLinkStyles(SpanStyle(color = accent, fontWeight = ru.e1173.nookast.designsystem.NookType.emphasis))
         var offset = 0
@@ -162,7 +173,7 @@ internal fun RichDescriptionText(
                     }
                 }
                 if (onSeekTo != null) {
-                    timestampMatches(paragraph).forEach { match ->
+                    timestampMatches(paragraph).filterNot { timestampSeconds(it) in notPlaces }.forEach { match ->
                         val positionMs = timestampSeconds(match) * 1_000L
                         addLink(
                             LinkAnnotation.Clickable("t$positionMs", timeStyle) { onSeekTo(positionMs) },
@@ -230,6 +241,52 @@ internal fun timestampMatches(text: String): List<MatchResult> {
         }
     }
     return kept
+}
+
+/**
+ * The times of [text] that make its chapter list. A list has one shape and goes forward, so a time
+ * that breaks either is something else, such as a meet-up «21 ноября, суббота. 18:00.» above the
+ * list (user, 14.11.2026, «Животные в Студии» 270):
+ * - when two or more times open their lines (after a bullet, dash or bracket), a time in the middle
+ *   of a sentence is not a chapter; a later time on a chapter's own line still is;
+ * - chapters go up, so only the longest run of rising times in reading order is kept.
+ */
+internal fun chapterMatches(text: String): List<MatchResult> {
+    val all = timestampMatches(text)
+    if (all.size < 2) return all
+    val ledLines = mutableSetOf<Int>()
+    val led = all.map { match ->
+        val lineStart = text.lastIndexOf('\n', match.range.first - 1) + 1
+        val opensLine = text.substring(lineStart, match.range.first).all { it in LIST_LEAD }
+        (opensLine || lineStart in ledLines).also { if (it) ledLines += lineStart }
+    }
+    val shaped = if (led.count { it } >= 2) all.filterIndexed { index, _ -> led[index] } else all
+    return longestRising(shaped)
+}
+
+private const val LIST_LEAD = " \t-–—•*‣▪◦[({|"
+
+/** The longest subsequence of [matches] whose times strictly rise; the earliest wins a tie. */
+private fun longestRising(matches: List<MatchResult>): List<MatchResult> {
+    if (matches.size < 2) return matches
+    val seconds = matches.map(::timestampSeconds)
+    val length = IntArray(matches.size) { 1 }
+    val previous = IntArray(matches.size) { -1 }
+    for (i in matches.indices) {
+        for (j in 0 until i) {
+            if (seconds[j] < seconds[i] && length[j] + 1 > length[i]) {
+                length[i] = length[j] + 1
+                previous[i] = j
+            }
+        }
+    }
+    var index = length.indices.maxBy { length[it] }
+    val kept = ArrayDeque<MatchResult>()
+    while (index >= 0) {
+        kept.addFirst(matches[index])
+        index = previous[index]
+    }
+    return kept.toList()
 }
 
 /** Whether the end of [prefix] (the text since the previous time) is inside quotes or brackets opened in it. */

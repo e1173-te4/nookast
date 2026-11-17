@@ -184,6 +184,8 @@ data class SoundSessionState(
     val supported: Boolean = true,
     /** The limiter has held more than 6 dB for 2 s («The limiter is holding the peaks»). */
     val limiterHolding: Boolean = false,
+    /** «Shorten pauses»: seconds of silence removed in this episode (DEC-071). */
+    val skippedSilenceSeconds: Int = 0,
 )
 
 /** The bridge between the popover and the service's processor, in one process (like [VoiceLevel]). */

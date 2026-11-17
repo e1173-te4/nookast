@@ -41,26 +41,14 @@ class NookIndication(private val color: Color) : IndicationNodeFactory {
 
         override fun onAttach() {
             coroutineScope.launch {
-                var presses = 0
-                var focuses = 0
-                var hovers = 0
+                val wash = PressWash()
+                // The last target asked for: Animatable.targetValue changes only once a launched
+                // animation starts, so a quick tap (press and release in one frame) left the wash on.
+                var wanted = 0f
                 source.interactions.collect { interaction ->
-                    when (interaction) {
-                        is PressInteraction.Press -> presses++
-                        is PressInteraction.Release, is PressInteraction.Cancel -> presses = (presses - 1).coerceAtLeast(0)
-                        // Keyboard, D-pad and pointer hover keep a steady, lighter wash (review of audit 4).
-                        is androidx.compose.foundation.interaction.FocusInteraction.Focus -> focuses++
-                        is androidx.compose.foundation.interaction.FocusInteraction.Unfocus -> focuses = (focuses - 1).coerceAtLeast(0)
-                        is androidx.compose.foundation.interaction.HoverInteraction.Enter -> hovers++
-                        is androidx.compose.foundation.interaction.HoverInteraction.Exit -> hovers = (hovers - 1).coerceAtLeast(0)
-                    }
-                    val target = when {
-                        presses > 0 -> 1f
-                        focuses > 0 -> FOCUS_WASH
-                        hovers > 0 -> HOVER_WASH
-                        else -> 0f
-                    }
-                    if (strength.targetValue != target) {
+                    val target = wash.on(interaction)
+                    if (wanted != target) {
+                        wanted = target
                         coroutineScope.launch {
                             strength.animateTo(target, NookMotion.fast())
                         }
@@ -76,6 +64,35 @@ class NookIndication(private val color: Color) : IndicationNodeFactory {
             drawContent()
             val k = strength.value
             if (k > 0f) drawRect(color.copy(alpha = color.alpha * k))
+        }
+    }
+}
+
+/**
+ * How strong the press wash should be after each interaction: full while pressed, lighter while
+ * focused or hovered, none otherwise. Counted per kind, so a release always lowers it (user, 13.11.2026:
+ * a settings section stayed lit after a quick tap moved to another one).
+ */
+internal class PressWash {
+    private var presses = 0
+    private var focuses = 0
+    private var hovers = 0
+
+    fun on(interaction: androidx.compose.foundation.interaction.Interaction): Float {
+        when (interaction) {
+            is PressInteraction.Press -> presses++
+            is PressInteraction.Release, is PressInteraction.Cancel -> presses = (presses - 1).coerceAtLeast(0)
+            // Keyboard, D-pad and pointer hover keep a steady, lighter wash (review of audit 4).
+            is androidx.compose.foundation.interaction.FocusInteraction.Focus -> focuses++
+            is androidx.compose.foundation.interaction.FocusInteraction.Unfocus -> focuses = (focuses - 1).coerceAtLeast(0)
+            is androidx.compose.foundation.interaction.HoverInteraction.Enter -> hovers++
+            is androidx.compose.foundation.interaction.HoverInteraction.Exit -> hovers = (hovers - 1).coerceAtLeast(0)
+        }
+        return when {
+            presses > 0 -> 1f
+            focuses > 0 -> FOCUS_WASH
+            hovers > 0 -> HOVER_WASH
+            else -> 0f
         }
     }
 }

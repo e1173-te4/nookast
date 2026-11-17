@@ -6,9 +6,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -73,8 +76,8 @@ internal fun DrawScope.drawGlowCircle(color: Color, center: Offset, radius: Floa
     }
 }
 
-/** A blurred rounded bar (glow of the timeline fill). */
-internal fun DrawScope.drawGlowBar(color: Color, topLeft: Offset, barSize: Size, blur: Dp) {
+/** A blurred rounded bar (glow of the timeline fill); [corner] defaults to a capsule along the width. */
+internal fun DrawScope.drawGlowBar(color: Color, topLeft: Offset, barSize: Size, blur: Dp, corner: Float = barSize.height / 2f) {
     if (color.alpha <= 0.001f || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
     val sigma = blur.toPx() / 2f
     val blurRadius = ((sigma - 0.5f) / 0.57735f).coerceAtLeast(0.5f)
@@ -83,8 +86,50 @@ internal fun DrawScope.drawGlowBar(color: Color, topLeft: Offset, barSize: Size,
             this.color = color.toArgb()
             maskFilter = BlurMaskFilter(blurRadius, BlurMaskFilter.Blur.NORMAL)
         }
-        val r = barSize.height / 2f
-        canvas.nativeCanvas.drawRoundRect(topLeft.x, topLeft.y, topLeft.x + barSize.width, topLeft.y + barSize.height, r, r, paint)
+        canvas.nativeCanvas.drawRoundRect(topLeft.x, topLeft.y, topLeft.x + barSize.width, topLeft.y + barSize.height, corner, corner, paint)
+    }
+}
+
+/**
+ * A glow made once and drawn every frame (DEC-061 review: no Paint or mask filter per frame): a
+ * blur of CSS size [blurPx] (px, as [drawCssShadow] converts it), filled or, with [strokePx] > 0,
+ * stroked with round ends. Blur masks need API 28; earlier devices draw nothing. Only its colour is
+ * set per draw; animate alpha or a transform, never the blur.
+ */
+internal class GlowPaint(blurPx: Float, strokePx: Float = 0f) {
+    private val paint: android.graphics.Paint? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            val sigma = blurPx / 2f
+            maskFilter = BlurMaskFilter(((sigma - 0.5f) / 0.57735f).coerceAtLeast(0.5f), BlurMaskFilter.Blur.NORMAL)
+            if (strokePx > 0f) {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = strokePx
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+            }
+        }
+    } else {
+        null
+    }
+
+    private fun ready(color: Color): android.graphics.Paint? {
+        if (color.alpha <= 0.001f) return null
+        return paint?.also { it.color = color.toArgb() }
+    }
+
+    fun roundRect(scope: DrawScope, color: Color, topLeft: Offset, size: Size, corner: Float) {
+        val p = ready(color) ?: return
+        scope.drawIntoCanvas { it.nativeCanvas.drawRoundRect(topLeft.x, topLeft.y, topLeft.x + size.width, topLeft.y + size.height, corner, corner, p) }
+    }
+
+    fun circle(scope: DrawScope, color: Color, center: Offset, radius: Float) {
+        val p = ready(color) ?: return
+        scope.drawIntoCanvas { it.nativeCanvas.drawCircle(center.x, center.y, radius, p) }
+    }
+
+    fun path(scope: DrawScope, color: Color, path: androidx.compose.ui.graphics.Path) {
+        val p = ready(color) ?: return
+        scope.drawIntoCanvas { it.nativeCanvas.drawPath(path.asAndroidPath(), p) }
     }
 }
 
@@ -164,13 +209,76 @@ fun Modifier.nookElevation(level: NookElevation, cornerRadius: Dp): Modifier {
             this.shadow(2.dp, RoundedCornerShape(cornerRadius), ambientColor = colors.textPrimary, spotColor = colors.textPrimary)
         } else {
             val ink = colors.textPrimary
-            this.drawBehind {
+            // Rendered once per size and shared by every tile of that size: a grid of covers drew 24–40
+            // fresh blurs a frame while it scrolled (B3, DEC-071).
+            this.drawWithCache {
                 val r = cornerRadius.toPx()
-                drawCssShadow(ink.copy(alpha = 0.05f), 16.dp, r, dy = 6.dp)
-                drawCssShadow(ink.copy(alpha = 0.04f), 3.dp, r, dy = 1.dp)
+                val far = ShadowBitmaps.get(this, size, ink, 16.dp, r, dy = 6.dp)
+                val near = ShadowBitmaps.get(this, size, ink, 3.dp, r, dy = 1.dp)
+                onDrawBehind {
+                    far?.draw(this, 0.05f)
+                    near?.draw(this, 0.04f)
+                }
             }
         }
         NookElevation.Level2 -> floatingShadow(cornerRadius)
         NookElevation.Level3 -> floatingShadow(cornerRadius, strength = 1.25f)
+    }
+}
+
+/**
+ * Shadows drawn once into a bitmap and reused (B3, DEC-071): the same CSS shadow as [drawCssShadow],
+ * rendered at full opacity for a size, radius and colour and drawn with the wanted alpha. Every tile
+ * of a grid shares one bitmap; nothing is allocated while a list scrolls. Shapes larger than
+ * [MAX_PIXELS] are not cached and draw nothing here (the caller's shapes are tiles and rows).
+ */
+internal object ShadowBitmaps {
+    class Shadow(private val bitmap: androidx.compose.ui.graphics.ImageBitmap, private val origin: Offset) {
+        private val paint = androidx.compose.ui.graphics.Paint()
+
+        fun draw(scope: DrawScope, alpha: Float) {
+            paint.alpha = alpha
+            scope.drawIntoCanvas { it.drawImage(bitmap, origin, paint) }
+        }
+    }
+
+    private data class Key(val w: Int, val h: Int, val color: Int, val blur: Float, val radius: Float, val dx: Float, val dy: Float)
+
+    private const val MAX_PIXELS = 1_500_000
+    private val cache = object : android.util.LruCache<Key, Shadow>(12 * 1024 * 1024) {
+        override fun sizeOf(key: Key, value: Shadow): Int = (key.w + 1) * (key.h + 1) * 4
+    }
+
+    fun get(density: androidx.compose.ui.unit.Density, size: Size, color: Color, blur: Dp, cornerRadius: Float, dx: Dp = 0.dp, dy: Dp = 0.dp): Shadow? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || size.width < 1f || size.height < 1f) return null
+        with(density) {
+            val sigma = blur.toPx() / 2f
+            val radius = ((sigma - 0.5f) / 0.57735f).coerceAtLeast(0.5f)
+            val margin = kotlin.math.ceil(sigma * 3f + 2f)
+            val ox = dx.toPx()
+            val oy = dy.toPx()
+            val left = minOf(0f, ox) - margin
+            val top = minOf(0f, oy) - margin
+            val w = kotlin.math.ceil(maxOf(size.width, size.width + ox) + margin - left).toInt()
+            val h = kotlin.math.ceil(maxOf(size.height, size.height + oy) + margin - top).toInt()
+            if (w.toLong() * h > MAX_PIXELS) return null
+            val key = Key(size.width.toInt(), size.height.toInt(), color.copy(alpha = 1f).toArgb(), radius, cornerRadius, ox, oy)
+            cache.get(key)?.let { return it }
+            val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.translate(-left, -top)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = color.copy(alpha = 1f).toArgb()
+                maskFilter = BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)
+            }
+            val own = android.graphics.Path().apply {
+                addRoundRect(0f, 0f, size.width, size.height, cornerRadius, cornerRadius, android.graphics.Path.Direction.CW)
+            }
+            canvas.withSave {
+                clipOutPath(own)
+                drawRoundRect(ox, oy, size.width + ox, size.height + oy, cornerRadius, cornerRadius, paint)
+            }
+            return Shadow(bitmap.asImageBitmap(), Offset(left, top)).also { cache.put(key, it) }
+        }
     }
 }

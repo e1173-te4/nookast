@@ -44,6 +44,14 @@ class AppGraph(context: Context) {
             api = PinePodsSyncApi(networkValidated = { syncScheduler.networkValidated() }),
             session = { session.load() },
             activeSession = PlaybackSessions::currentFor,
+            onEpisodeIdsMerged = { aliases ->
+                val downloads = ru.e1173.nookast.offline.EpisodeDownloadManager(appContext)
+                aliases.forEach { (old, new) ->
+                    downloads.remapEpisodeId(old, new)
+                    serverDownloads.remapEpisodeId(old, new)
+                    downloadCleanupState.remapEpisodeId(old, new)
+                }
+            },
         )
     }
 
@@ -58,6 +66,68 @@ class AppGraph(context: Context) {
             appContext,
             session = { session.load() },
             progressCounter = { episodeId -> database.syncV8Dao().progress(episodeId)?.intentCounter ?: 0L },
+        )
+    }
+
+    internal val downloadCleanupState: ru.e1173.nookast.offline.CleanupPreferences by lazy {
+        ru.e1173.nookast.offline.CleanupPreferences(appContext)
+    }
+
+    /**
+     * On-device download cleanup (DEC-064). Played state comes from the server when it answers,
+     * else from Room; it only ever deletes files on the phone.
+     */
+    internal val downloadCleanup: ru.e1173.nookast.offline.DownloadCleanupRunner by lazy {
+        val preferences = ru.e1173.nookast.player.PlaybackPreferences(appContext)
+        val api = PinePodsSyncApi(networkValidated = { syncScheduler.networkValidated() })
+        ru.e1173.nookast.offline.DownloadCleanupRunner(
+            downloads = {
+                val manager = ru.e1173.nookast.offline.EpisodeDownloadManager(appContext)
+                val local = manager.completedEpisodes()
+                val cached = database.offlineCacheDao().episodesByPinePodsIds(local.map { it.episodeId }.filter { it > 0 })
+                    .mapNotNull { row -> row.pinePodsEpisodeId?.let { it to row.podcastId } }.toMap()
+                local.map { download ->
+                    // The download record first, then the episode cache; the server fills the rest.
+                    val podcastId = manager.podcastIdOf(download.episodeId) ?: cached[download.episodeId]?.takeIf { it > 0 }
+                    ru.e1173.nookast.offline.CleanupCandidate(download.episodeId, podcastId, download.completedAtEpochMs)
+                }
+            },
+            deleteLocal = { episodeId -> ru.e1173.nookast.offline.EpisodeDownloadManager(appContext).remove(episodeId) },
+            rememberPodcastId = { episodeId, podcastId ->
+                ru.e1173.nookast.offline.EpisodeDownloadManager(appContext).rememberPodcastId(episodeId, podcastId)
+            },
+            defaults = {
+                ru.e1173.nookast.offline.CleanupRules(preferences.deletePlayedDownloads, preferences.deleteDownloadsAfterDays)
+            },
+            overrides = {
+                preferences.cleanupOverrides().mapValues { (_, value) -> ru.e1173.nookast.offline.CleanupOverride(value.first, value.second) }
+            },
+            state = downloadCleanupState,
+            serverPlayed = ru.e1173.nookast.offline.ServerPlayed { episodeId ->
+                session.load()?.let { current ->
+                    api.episode(current, episodeId)?.let { ru.e1173.nookast.offline.ServerAnswer(it.completed, it.podcastId) }
+                }
+            },
+            localPlayed = { episodeId ->
+                // A dirty row holds an unsent intent: newer than the server, it decides alone.
+                val progress = database.syncV8Dao().progress(episodeId)
+                when {
+                    progress != null -> ru.e1173.nookast.offline.LocalPlayed(progress.completed, pending = progress.dirty)
+                    else -> ru.e1173.nookast.offline.LocalPlayed(
+                        database.offlineCacheDao().episodesByPinePodsIds(listOf(episodeId)).firstOrNull()?.completed ?: false,
+                        pending = false,
+                    )
+                }
+            },
+            openEpisodeIds = {
+                val open = ru.e1173.nookast.player.PlaybackActivity.openEpisodeId
+                    // Before the player restores it on a cold start, the saved episode still counts as open.
+                    ?: database.offlineCacheDao().getCurrentPlaybackContext()?.pinePodsEpisodeId
+                val queue = syncRepository.localQueue()
+                // The episode that plays next is about to be opened too.
+                val next = queue.getOrNull((open?.let(queue::indexOf) ?: -1) + 1)
+                setOfNotNull(open, next)
+            },
         )
     }
 

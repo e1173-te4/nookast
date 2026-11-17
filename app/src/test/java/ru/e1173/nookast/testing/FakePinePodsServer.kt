@@ -32,6 +32,7 @@ class FakePinePodsServer : Closeable {
     private val episodes = linkedMapOf<Int, Episode>()
     private val queue = mutableListOf<QueueRow>()
     private val saved = mutableListOf<Int>()
+    private val serverDownloads = linkedSetOf<Int>()
     private val keys = mutableMapOf<String, Int>()
     private val revokedKeys = mutableSetOf<String>()
     private val faults = mutableMapOf<String, ArrayDeque<Fault>>()
@@ -41,6 +42,19 @@ class FakePinePodsServer : Closeable {
 
     var autoCompleteSeconds: Int = 0
     var version: String = "0.9.0"
+
+    /**
+     * PinePods 0.9.1+ queue (tag 0.9.2, caed396, rust-api/src/database.rs queue_episode,
+     * mark_episode_completed): an added episode goes under [nowPlayingElsewhere] or to the top,
+     * a completed episode leaves the queue, and `reorder_queue` prefers the type-aware `episodes`.
+     */
+    var queue091: Boolean = false
+
+    /** The active session anchor of another device (Redis now-playing in 0.9.1+), or null. */
+    var nowPlayingElsewhere: Int? = null
+
+    /** Merged-away id to the episode it became (EpisodeIDAliases, 0.9.1+). */
+    private val aliases = mutableMapOf<Int, Int>()
 
     /** Simulates Postgres returning equal positions in a different order on each read. */
     var unstableTieOrder: Boolean = false
@@ -114,6 +128,25 @@ class FakePinePodsServer : Closeable {
 
     // --- Server-side edits by "another client" (web UI or another device) ---
 
+    /**
+     * The 0.9.1 upgrade merge: [old] disappears into [into]; its queue row, progress and saved mark
+     * move over, and requests carrying [old] are rewritten by the middleware
+     * (rust-api/src/services/episode_aliases.rs follow_merged_episodes).
+     */
+    fun mergeEpisode(old: Int, into: Int) = synchronized(lock) {
+        val gone = episodes.remove(old) ?: return@synchronized
+        val target = episodes.getValue(into)
+        if ((gone.listenSeconds ?: -1) > (target.listenSeconds ?: -1)) target.listenSeconds = gone.listenSeconds
+        target.completed = target.completed || gone.completed
+        val row = queue.firstOrNull { it.episodeId == old }
+        if (row != null) {
+            queue.remove(row)
+            if (queue.none { it.episodeId == into }) queue += row.copy(episodeId = into)
+        }
+        if (saved.remove(old) && into !in saved) saved += into
+        aliases[old] = into
+    }
+
     fun webQueue(episodeId: Int) = synchronized(lock) { queuePod(episodeId) }
 
     fun webReorder(ids: List<Int>) = synchronized(lock) { reorder(ids) }
@@ -145,6 +178,11 @@ class FakePinePodsServer : Closeable {
     fun episode(id: Int): Episode? = synchronized(lock) { episodes[id]?.copy() }
 
     fun savedIds(): List<Int> = synchronized(lock) { saved.toList() }
+
+    /** Episodes downloaded on the server (`DownloadedEpisodes`), e.g. by the user in the web UI. */
+    fun serverDownload(episodeId: Int) = synchronized(lock) { serverDownloads += episodeId }
+
+    fun serverDownloadIds(): Set<Int> = synchronized(lock) { serverDownloads.toSet() }
 
     fun calls(): List<Call> = synchronized(lock) { calls.toList() }
 
@@ -210,6 +248,7 @@ class FakePinePodsServer : Closeable {
         } else {
             null
         }
+        json?.let(::followAliases)
 
         // record_listen_duration and mark_episode_uncompleted ignore the key check result and then
         // fail on fetch_one: a revoked key surfaces as 500, not 401 (docs/API.md §5).
@@ -280,6 +319,19 @@ class FakePinePodsServer : Closeable {
                 json(200, JSONObject().put("data", "Successfully Removed Episode From Queue"))
             }
 
+            "/api/data/download_episode_list" -> {
+                if (request.url.queryParameter("user_id")?.toIntOrNull() != owner) return forbidden()
+                val rows = serverDownloads.map { id -> JSONObject().put("episodeid", id) }
+                json(200, JSONObject().put("downloaded_episodes", JSONArray(rows)))
+            }
+
+            "/api/data/delete_episode" -> {
+                val id = json!!.requireInt("episode_id") ?: return missingField("episode_id")
+                if (json.optInt("user_id") != owner) return forbidden()
+                serverDownloads.remove(id)
+                detail("Episode deleted")
+            }
+
             "/api/data/clear_queue" -> {
                 if (json!!.optInt("user_id") != owner) return forbidden()
                 queue.clear()
@@ -290,8 +342,14 @@ class FakePinePodsServer : Closeable {
                 val userId = request.url.queryParameter("user_id")?.toIntOrNull()
                     ?: return text(400, "Failed to deserialize query string: missing field `user_id`")
                 if (userId != owner) return forbidden()
-                val ids = json!!.optJSONArray("episode_ids") ?: return missingField("episode_ids")
-                reorder((0 until ids.length()).map(ids::getInt))
+                val typed = json!!.optJSONArray("episodes")?.takeIf { queue091 }
+                val ids = if (typed != null) {
+                    (0 until typed.length()).map { typed.getJSONObject(it).getInt("episode_id") }
+                } else {
+                    val legacy = json.optJSONArray("episode_ids") ?: return missingField("episode_ids")
+                    (0 until legacy.length()).map(legacy::getInt)
+                }
+                reorder(ids)
                 json(200, JSONObject().put("message", "Queue reordered successfully"))
             }
 
@@ -344,9 +402,31 @@ class FakePinePodsServer : Closeable {
 
     private fun markCompleted(id: Int) {
         val episode = episodes[id] ?: return
+        if (queue091) removeQueued(id) // 0.9.1+: before the duration check, for every completion
         val duration = episode.durationSeconds ?: return // NULL duration: silent no-op
         episode.completed = true
         episode.listenSeconds = duration
+    }
+
+    /** The id-rewriting middleware: `episode_id`, `episodeid`, `episode_ids` at any depth. */
+    private fun followAliases(value: Any?) {
+        if (aliases.isEmpty()) return
+        when (value) {
+            is JSONObject -> value.keys().asSequence().toList().forEach { key ->
+                val item = value.get(key)
+                if (key in ALIAS_KEYS && item is Int) {
+                    value.put(key, aliases[item] ?: item)
+                } else if (key in ALIAS_KEYS && item is JSONArray) {
+                    (0 until item.length()).forEach { index ->
+                        val id = item.optInt(index, 0)
+                        aliases[id]?.let { item.put(index, it) }
+                    }
+                } else {
+                    followAliases(item)
+                }
+            }
+            is JSONArray -> (0 until value.length()).forEach { followAliases(value.get(it)) }
+        }
     }
 
     private fun markUncompleted(id: Int) {
@@ -358,6 +438,14 @@ class FakePinePodsServer : Closeable {
     private fun queuePod(id: Int) {
         // No foreign key on EpisodeQueue: a deleted episode becomes an invisible orphan row.
         if (queue.any { it.episodeId == id }) return
+        if (queue091) {
+            // Under the anchor, or the top when the anchor is not queued; everything below shifts.
+            val anchor = nowPlayingElsewhere?.let { playing -> queue.firstOrNull { it.episodeId == playing }?.position }
+            val position = anchor?.plus(1) ?: 1
+            queue.filter { it.position >= position }.forEach { it.position += 1 }
+            queue += QueueRow(nextQueueId++, id, position, ++queueClock)
+            return
+        }
         val position = (queue.maxOfOrNull { it.position } ?: 0) + 1
         queue += QueueRow(nextQueueId++, id, position, ++queueClock)
     }
@@ -452,5 +540,6 @@ class FakePinePodsServer : Closeable {
 
     companion object {
         const val USER_ID = 2
+        private val ALIAS_KEYS = setOf("episode_id", "episodeid", "episode_ids")
     }
 }

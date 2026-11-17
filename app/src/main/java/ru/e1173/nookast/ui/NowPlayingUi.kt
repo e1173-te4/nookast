@@ -115,6 +115,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -166,6 +167,7 @@ import ru.e1173.nookast.designsystem.NookTimecodes
 import ru.e1173.nookast.designsystem.NookExpandable
 import ru.e1173.nookast.designsystem.NookMiniPlayer
 import ru.e1173.nookast.designsystem.NookSourceChip
+import ru.e1173.nookast.designsystem.connection.NookSourcePill
 import ru.e1173.nookast.designsystem.qualityLabel
 import ru.e1173.nookast.designsystem.drawGlowBar
 import ru.e1173.nookast.designsystem.drawCssShadow
@@ -198,6 +200,15 @@ private const val PREVIEW_ARTWORK_PREFIX = "preview://"
 // Cycles keep their own lengths (design audit 2.2).
 private const val PLAYING_BARS_CYCLE_MS = 900
 private const val SOURCE_PULSE_CYCLE_MS = 1800
+
+/**
+ * The decode size of the playing cover in the player and the mini-player: the player's largest cover
+ * (the car's 426.67 dp), so both ends of the shared flight draw one sharp bitmap from memory.
+ */
+private val SHARED_COVER_DECODE = 427.dp
+
+/** A tap on the status chip this soon after its card closed on that same press keeps the card closed. */
+private const val POPOVER_RETAP_MS = 400L
 
 @Composable
 internal fun MiniPlayerBar(
@@ -233,13 +244,18 @@ internal fun MiniPlayerBar(
         onPlayPause = onTogglePlayback,
         onQueue = onOpenUpNext,
         artwork = { artworkModifier ->
-            Artwork(
-                url = artworkUrl,
+            // The chapter's picture as in the player, decoded at the player's size (user, 14.11.2026): the
+            // cover that flies between them is drawn from this one, so a small episode cover stretched
+            // to the player's size and swapped for the chapter's showed at the start of the flight, and
+            // a chapter picture changed while collapsed stayed the episode's.
+            ChapterCover(
+                chapters = state.feedChapters.ifEmpty { state.nativeChapters },
+                positionMs = state.positionMs,
+                artworkUrl = artworkUrl,
                 title = state.title,
-                fallbackUrl = podcastArtworkFallback(state.podcastName),
-                downloaded = false,
-                badgeSize = 0.dp,
+                podcastName = state.podcastName,
                 cornerRadius = if (largeControls) 13.dp else 10.dp,
+                decodeSize = SHARED_COVER_DECODE,
                 // Flies into the player's cover (design audit 4.1).
                 modifier = artworkModifier.sharedCover(
                     radius = (if (largeControls) 13.dp else 10.dp) * ARTWORK_CORNER_SCALE,
@@ -350,6 +366,8 @@ internal fun NowPlayingScreen(
             .hazeSource(nowPlayingHaze, zIndex = -1f)
             .background(screenBackground),
     ) {
+        // The theme's own pair of night-glow lights (DEC-061), under the cover's light.
+        ru.e1173.nookast.designsystem.NookThemeGlow(Modifier.matchParentSize())
         ArtworkTintBackdrop(
             url = currentEntry?.artworkUrl.orEmpty().ifBlank { playbackState.artworkUrl },
             modifier = Modifier.matchParentSize(),
@@ -997,33 +1015,61 @@ private fun SourceStatusPopover(
     state: PlaybackUiState,
     wide: Boolean,
     largeControls: Boolean,
+    story: ru.e1173.nookast.designsystem.connection.ConnectionStory,
+    palette: ru.e1173.nookast.designsystem.connection.ConnectionPalette,
+    introSeen: Boolean,
+    onIntroSeen: () -> Unit,
     onRunDiagnostics: () -> Unit,
     onDownloadToServer: () -> Unit = {},
+    onAlwaysViaServer: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     pointerAtBottomStart: Boolean = false,
 ) {
     val state = state.live()
-    // Source card (DEC-033, user 27.10.2026: "make it something you want to open"): a widget-like
-    // card in the iOS manner — a large status glyph with a soft pulse while playing, the source
-    // word and host, the quality tag; two tiles (quality, buffer ring); status pills; the server
-    // copy offer and a quiet "Check connection" row.
+    // The connection card (DEC-069): one height in every state; the scheme of the chosen story moves
+    // only while the card is open and sound plays.
     val colors = LocalNookastColors.current
-    val coral = ru.e1173.nookast.designsystem.NookFixedColors.alertCoral(colors.isDark)
-    val tone = when {
-        state.isLocalSource -> colors.success
-        state.streamReachability == StreamReachability.UNAVAILABLE -> coral
-        state.streamReachability == StreamReachability.AVAILABLE -> colors.success
-        else -> colors.textSecondary
+    val reach = rememberSettledReachability(state.streamReachability, waiting = state.isPlaying)
+    val sourceNow = sourceState(state, reach)
+    var focus by remember { mutableStateOf<ru.e1173.nookast.designsystem.connection.SceneFocus?>(null) }
+    // The first look at the card checks the connection when the last check is old (2 min) or missing.
+    LaunchedEffect(Unit) {
+        val checked = state.probes.checkedAtElapsedMs
+        if (!state.isLocalSource && (checked == 0L || elapsedNow() - checked > CARD_RECHECK_MS)) onRunDiagnostics()
     }
-    val quality = qualityLabel(state.bitrateKbps)
-    val card = colors.surface.compositeOver(colors.background)
+    // «проверено 2 мин назад» moves on by itself.
+    var now by remember { androidx.compose.runtime.mutableLongStateOf(elapsedNow()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5_000)
+            now = elapsedNow()
+        }
+    }
+    // Sound moved to the server's copy: one flash of the story (a falling star, seeds, bubbles, packets).
+    val flash = remember { androidx.compose.animation.core.Animatable(0f) }
+    var lastState by remember { mutableStateOf(sourceNow) }
+    LaunchedEffect(sourceNow) {
+        if (sourceNow == SourceState.SERVER_COPY && lastState == SourceState.DOWNLOADING) {
+            flash.snapTo(1f)
+            flash.animateTo(0f, ru.e1173.nookast.designsystem.NookMotion.slow())
+        }
+        lastState = sourceNow
+    }
+    val res = resources()
+    val model = remember(state, sourceNow, focus, introSeen, now, story, res.configuration) {
+        res.cardModel(state, sourceNow, story, focus, introSeen, elapsedNow())
+    }
+    val card = palette.card
     val border = colors.divider
-    val tileColor = colors.textSecondary.copy(alpha = if (colors.isDark) 0.10f else 0.07f)
-    val captionStyle = MaterialTheme.typography.labelSmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceCaption)
+    val tone = when (sourceNow) {
+        SourceState.BLOCKED, SourceState.OFFLINE -> palette.scene.bad
+        SourceState.LOCAL, SourceState.OK, SourceState.SERVER_COPY, SourceState.RESCUE -> palette.scene.ok
+        else -> palette.muted
+    }
     Box(
         modifier = modifier
             .wrapContentHeight(align = Alignment.Top, unbounded = true)
-            .width(if (largeControls) 340.dp else 308.dp),
+            .width(if (largeControls) 340.dp else 316.dp),
     ) {
         // One outline for the card and its pointer (user, 29.10.2026: the seam between the two
         // looked unfinished): a single shape with a soft, rounded tip, filled and stroked once.
@@ -1037,7 +1083,7 @@ private fun SourceStatusPopover(
                 pointerCenterFromEnd = if (pointerAtBottomStart) null else (if (largeControls) 42.dp else 34.dp) + 11.dp,
             )
         }
-        Column(
+        Box(
             Modifier
                 .fillMaxWidth()
                 .drawBehind {
@@ -1057,230 +1103,28 @@ private fun SourceStatusPopover(
                 .padding(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 16.dp + if (pointerAtBottomStart) 0.dp else pointerHeight,
+                    top = 14.dp + if (pointerAtBottomStart) 0.dp else pointerHeight,
                     bottom = 16.dp + if (pointerAtBottomStart) pointerHeight else 0.dp,
                 ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Header: status glyph, source word and host, quality tag.
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SourcePulseGlyph(tone = tone, local = state.isLocalSource, pulsing = state.isPlaying && !state.isLocalSource)
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(
-                            when {
-                                state.isLocalSource -> R.string.badge_local
-                                state.isServerCopySource -> R.string.badge_server
-                                state.streamReachability == StreamReachability.UNAVAILABLE -> R.string.badge_unavailable
-                                state.streamReachability == StreamReachability.AVAILABLE -> R.string.badge_stream
-                                else -> R.string.badge_checking
-                            },
-                        ),
-                        style = MaterialTheme.typography.titleLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceTitle),
-                        color = colors.textPrimary,
-                    )
-                    Text(
-                        sourceLabel(state),
-                        style = MaterialTheme.typography.bodySmall.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceBody),
-                        color = colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (quality != null) {
-                    Box(
-                        Modifier
-                            .border(1.5.dp, colors.textPrimary.copy(alpha = 0.7f), ru.e1173.nookast.designsystem.NookShapes.xs)
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
-                    ) {
-                        Text(quality, style = MaterialTheme.typography.labelLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceQuality), color = colors.textPrimary)
-                    }
-                }
-            }
-            // Tiles: quality and buffer.
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(
-                    Modifier.weight(1f).clip(ru.e1173.nookast.designsystem.NookShapes.m).background(tileColor).padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(stringResource(R.string.quality_field).uppercase(), style = captionStyle, color = colors.textSecondary)
-                    Text(
-                        state.bitrateKbps?.let { stringResource(R.string.audio_bitrate_kbps, it) } ?: "—",
-                        style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceMetric),
-                        color = colors.textPrimary,
-                    )
-                    Text(
-                        stringResource(
-                            when (quality) {
-                                "HQ" -> R.string.quality_hq
-                                "HD" -> R.string.quality_hd
-                                "SD" -> R.string.quality_sd
-                                else -> R.string.quality_unknown
-                            },
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                }
-                Row(
-                    Modifier.weight(1f).clip(ru.e1173.nookast.designsystem.NookShapes.m).background(tileColor).padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    val fraction = cachedPercent(state) / 100f
-                    val ring = colors.accent
-                    val track = colors.track
-                    Canvas(Modifier.size(38.dp)) {
-                        val stroke = 4.dp.toPx()
-                        val inset = stroke / 2f
-                        val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
-                        drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
-                        drawArc(ring, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(stringResource(R.string.cache_field_short).uppercase(), style = captionStyle, color = colors.textSecondary)
-                        Text("${cachedPercent(state)}%", style = MaterialTheme.typography.titleMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceMetric), color = colors.textPrimary)
-                        Text(
-                            if (state.isLocalSource) {
-                                stringResource(R.string.cache_entire_episode)
-                            } else {
-                                stringResource(
-                                    R.string.cache_ahead,
-                                    stringResource(R.string.duration_minutes, ceil(state.bufferedAheadMs / 60_000.0).toInt().coerceAtLeast(1)),
-                                )
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textSecondary,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-            // Status pills: server and time left.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!state.isLocalSource) {
-                    SourcePill(
-                        text = stringResource(R.string.server_pill, serverLabel(state)),
-                        dot = when (state.streamReachability) {
-                            StreamReachability.AVAILABLE -> colors.success
-                            StreamReachability.UNAVAILABLE -> coral
-                            else -> colors.textSecondary
-                        },
-                        background = tileColor,
-                    )
-                }
-                SourcePill(
-                    text = stringResource(
-                        R.string.time_left_pill,
-                        stringResource(
-                            R.string.duration_minutes,
-                            ceil((state.durationMs - state.positionMs).coerceAtLeast(0) / 60_000.0).toInt().coerceAtLeast(1),
-                        ),
-                    ),
-                    dot = null,
-                    background = tileColor,
-                )
-            }
-            ServerCopySection(state, onDownloadToServer)
-            // Quiet action row; results of the last check below it.
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(ru.e1173.nookast.designsystem.NookShapes.m)
-                    .clickable(enabled = !state.diagnosticsRunning) { onRunDiagnostics() }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.check_connection),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.merge(ru.e1173.nookast.designsystem.NookPlayerType.sourceAction),
-                    color = colors.accentText,
-                )
-                if (state.diagnosticsRunning) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.accentText)
-                } else {
-                    Icon(NookIcons.ChevronRight, null, tint = colors.accentText, modifier = Modifier.size(14.dp))
-                }
-            }
-            state.diagnosticResults.forEach { result ->
-                val host = result.requestedHost.ifBlank { result.resolvedHost }
-                Text(
-                    if (result.isAvailable) {
-                        stringResource(R.string.diagnostic_available, host, result.latencyMs)
-                    } else {
-                        stringResource(R.string.diagnostic_unavailable, host)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                )
-            }
+            ru.e1173.nookast.designsystem.connection.NookSourceCard(
+                model = model,
+                story = story,
+                palette = palette,
+                onCheck = onRunDiagnostics,
+                onSceneTap = { tapped -> focus = if (focus == tapped) null else tapped },
+                onAlways = onAlwaysViaServer,
+                onDownload = onDownloadToServer,
+                onCloseIntro = onIntroSeen,
+                live = state.isPlaying,
+                flash = { flash.value },
+            )
         }
     }
 }
 
-/** 44 dp status glyph of the source card; a ring breathes out of it while the stream plays. */
-@Composable
-private fun SourcePulseGlyph(tone: Color, local: Boolean, pulsing: Boolean) {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "sourcePulse")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            tween(SOURCE_PULSE_CYCLE_MS, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-        ),
-        label = "sourcePulsePhase",
-    )
-    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            val r = size.minDimension / 2f
-            drawCircle(tone.copy(alpha = 0.16f), radius = r)
-            if (pulsing) {
-                drawCircle(
-                    tone.copy(alpha = 0.35f * (1f - phase)),
-                    radius = r * (0.45f + 0.55f * phase),
-                    style = Stroke(2.dp.toPx()),
-                )
-            }
-        }
-        if (local) {
-            Icon(NookIcons.CheckBold, null, tint = tone, modifier = Modifier.size(20.dp))
-        } else {
-            Box(Modifier.size(12.dp).background(tone, CircleShape))
-        }
-    }
-}
-
-@Composable
-private fun SourcePill(text: String, dot: Color?, background: Color) {
-    Row(
-        Modifier.clip(CircleShape).background(background).padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        if (dot != null) Box(Modifier.size(7.dp).background(dot, CircleShape))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = LocalNookastColors.current.textPrimary, maxLines = 1)
-    }
-}
-
-@Composable
-private fun sourceLabel(state: PlaybackUiState): String = when {
-    state.isLocalSource -> stringResource(R.string.source_local_file)
-    state.isServerCopySource -> stringResource(R.string.source_pinepods_copy)
-    state.isUsingPinePodsFallback -> stringResource(R.string.source_pinepods)
-    // The origin host tells "SoundCloud is blocked" apart from "my server is down".
-    state.streamHost.isNotBlank() -> stringResource(R.string.source_rss_host, state.streamHost)
-    else -> stringResource(R.string.source_rss)
-}
-
-@Composable
-private fun serverLabel(state: PlaybackUiState): String = when (state.streamReachability) {
-    StreamReachability.AVAILABLE -> stringResource(R.string.server_available)
-    StreamReachability.UNAVAILABLE -> stringResource(R.string.server_unavailable)
-    StreamReachability.CHECKING -> stringResource(R.string.server_checking)
-    StreamReachability.LOCAL -> stringResource(R.string.server_not_required)
-    StreamReachability.IDLE -> stringResource(R.string.server_checking)
-}
+/** The card checks again on opening when its last check is older than this. */
+private const val CARD_RECHECK_MS = 120_000L
 
 @Composable
 private fun PlayerPane(
@@ -1313,6 +1157,11 @@ private fun PlayerPane(
 ) {
     val state = state.live()
     val preview = playingElsewhere != null
+    // DEC-069: the story of the connection scheme and the colours of its pill and card.
+    val sourcePreferences: ru.e1173.nookast.preferences.AppPreferencesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val sourceDisplay by sourcePreferences.state.collectAsStateWithLifecycle()
+    val connectionStory = ru.e1173.nookast.designsystem.connection.ConnectionStories.byId(sourceDisplay.connectionStory)
+    val connectionPalette = rememberConnectionPalette(artworkUrl)
     // D3 components of the approved mockup; the car profile scales them by 4/3.
     val componentScale = if (largeControls) 4f / 3f else 1f
     BoxWithConstraints(modifier) {
@@ -1389,7 +1238,8 @@ private fun PlayerPane(
                         title = state.title,
                         podcastName = state.podcastName,
                         cornerRadius = coverRadius,
-                        criticalWarningSeconds = criticalWarningSeconds(state),
+                        // One decode for both ends of the flight: the mini-player finds it in memory.
+                        decodeSize = SHARED_COVER_DECODE,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1481,6 +1331,7 @@ private fun PlayerPane(
                 modifier = Modifier.padding(horizontal = 4.dp),
                 scale = componentScale,
                 enabled = !preview,
+                playing = state.isPlaying,
             )
             NookTimecodes(
                 elapsed = formatPlaybackTime(state.positionMs),
@@ -1489,8 +1340,8 @@ private fun PlayerPane(
                 remaining = "−${formatPlaybackTime((state.durationMs / 1_000 - state.positionMs / 1_000).coerceAtLeast(0) * 1_000)}",
                 modifier = Modifier.padding(horizontal = 4.dp),
                 scale = componentScale,
-                center = {
-                    // DEC-029: the source chip lives under the timeline, centred between the times.
+                centerFitted = { pillRoom ->
+                    // DEC-029, DEC-069: the source pill lives under the timeline, centred between the times.
                     val reach = rememberSettledReachability(state.streamReachability, waiting = state.isPlaying)
                     if (playingElsewhere != null) {
                         NookSourceChip(
@@ -1506,26 +1357,22 @@ private fun PlayerPane(
                         return@NookTimecodes
                     }
                     Box {
-                        NookSourceChip(
-                            label = stringResource(
-                                when {
-                                    state.isLocalSource -> R.string.badge_local
-                                    state.isServerCopySource -> R.string.badge_server
-                                    reach == StreamReachability.UNAVAILABLE -> R.string.badge_unavailable
-                                    reach == StreamReachability.AVAILABLE -> R.string.badge_stream
-                                    else -> R.string.badge_checking
-                                },
-                            ),
-                            quality = qualityLabel(state.bitrateKbps),
-                            health = when {
-                                state.isLocalSource -> SourceHealth.LOCAL
-                                reach == StreamReachability.UNAVAILABLE -> SourceHealth.UNAVAILABLE
-                                reach == StreamReachability.AVAILABLE -> SourceHealth.HEALTHY
-                                else -> SourceHealth.CHECKING
+                        // The popup closes on the press outside it, before the chip sees the tap: a tap on the chip
+                        // just after that close is the same tap and must not open the card again (user, 14.11.2026).
+                        var closedAt by remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+                        val sourceActions = LocalSourceActions.current
+                        val sourceNow = sourceState(state, reach)
+                        val res = resources()
+                        NookSourcePill(
+                            model = remember(state, sourceNow, res) { res.pillModel(state, sourceNow, state.quickCheck) },
+                            story = connectionStory,
+                            palette = connectionPalette,
+                            maxWidth = pillRoom,
+                            onClick = {
+                                val justClosed = android.os.SystemClock.uptimeMillis() - closedAt < POPOVER_RETAP_MS
+                                onSourceStatusExpandedChange(!sourceStatusExpanded && !justClosed)
                             },
-                            busy = state.isBuffering,
-                            onClick = { onSourceStatusExpandedChange(!sourceStatusExpanded) },
-                            contentDescription = stringResource(R.string.open_source_status),
+                            onLongPress = sourceActions?.quickCheck?.takeIf { !state.isLocalSource },
                             scale = componentScale,
                         )
                         if (sourceStatusExpanded) {
@@ -1539,7 +1386,10 @@ private fun PlayerPane(
                                         -(32.dp * componentScale).roundToPx() + ru.e1173.nookast.designsystem.FloatingShadowMargin.Bottom.roundToPx(),
                                     )
                                 },
-                                onDismissRequest = { onSourceStatusExpandedChange(false) },
+                                onDismissRequest = {
+                                    closedAt = android.os.SystemClock.uptimeMillis()
+                                    onSourceStatusExpandedChange(false)
+                                },
                                 properties = PopupProperties(focusable = true),
                             ) {
                                 // DEC-024 §2.6: grows from the chip (scale 0.88, rises 24 dp) on a 340/0.80 spring.
@@ -1553,8 +1403,21 @@ private fun PlayerPane(
                                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f),
                                     ) + slideInVertically(ru.e1173.nookast.designsystem.NookMotion.spatial()) { with(density) { 24.dp.roundToPx() } } + fadeIn(ru.e1173.nookast.designsystem.NookMotion.fast()),
                                 ) {
+                                    // The window reaches over the pill by the shadow's margin, so a tap on the pill landed in the
+                                    // popup and closed nothing (user, 14.11.2026): a tap anywhere outside the card itself closes it.
+                                    var cardSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
                                     androidx.compose.foundation.layout.Box(
-                                        Modifier.padding(
+                                        Modifier.pointerInput(Unit) {
+                                            detectTapGestures { tap ->
+                                                val left = ru.e1173.nookast.designsystem.FloatingShadowMargin.Side.toPx()
+                                                val top = ru.e1173.nookast.designsystem.FloatingShadowMargin.Top.toPx()
+                                                val inside = tap.x in left..(left + cardSize.width) && tap.y in top..(top + cardSize.height)
+                                                if (!inside) {
+                                                    closedAt = android.os.SystemClock.uptimeMillis()
+                                                    onSourceStatusExpandedChange(false)
+                                                }
+                                            }
+                                        }.padding(
                                             start = ru.e1173.nookast.designsystem.FloatingShadowMargin.Side,
                                             end = ru.e1173.nookast.designsystem.FloatingShadowMargin.Side,
                                             top = ru.e1173.nookast.designsystem.FloatingShadowMargin.Top,
@@ -1565,9 +1428,15 @@ private fun PlayerPane(
                                         state = state,
                                         wide = alignMetadataStart,
                                         largeControls = largeControls,
+                                        story = connectionStory,
+                                        palette = connectionPalette,
+                                        introSeen = sourceDisplay.sourceIntroSeen,
+                                        onIntroSeen = sourcePreferences::setSourceIntroSeen,
                                         onRunDiagnostics = onRunDiagnostics,
                                         onDownloadToServer = onDownloadToServer,
                                         pointerAtBottomStart = true,
+                                        onAlwaysViaServer = { on -> sourceActions?.setAlwaysViaServer?.invoke(on) },
+                                        modifier = Modifier.onSizeChanged { cardSize = it },
                                     )
                                     }
                                 }
@@ -1643,9 +1512,16 @@ private fun PlayerPane(
                     else -> DockDownloadState.IDLE
                 },
                 downloadProgress = downloadProgress,
-                downloadLabel = stringResource(
-                    if (downloadState == EpisodeDownloadState.DOWNLOADED) R.string.delete_download else R.string.download_episode,
-                ),
+                // DEC-069: the size on the button; short of room on the device, the free space beside it.
+                downloadLabel = if (downloadState == EpisodeDownloadState.DOWNLOADED) {
+                    stringResource(R.string.delete_download)
+                } else {
+                    val res = resources()
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    remember(state.mediaSizeBytes, state.bitrateKbps, state.durationMs, res.configuration) {
+                        downloadLabelWithSize(context, res, state)
+                    }
+                },
                 downloadEnabled = downloadActionEnabled || downloadState == EpisodeDownloadState.DOWNLOADED,
                 playedLabel = stringResource(if (state.isMarkedPlayed) R.string.played else R.string.mark_played),
                 played = state.isMarkedPlayed,
@@ -2749,7 +2625,6 @@ internal fun Artwork(
     badgeSize: Dp,
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 14.dp,
-    criticalWarningSeconds: Int? = null,
     reloadKey: Any? = null,
     fallbackUrl: String? = null,
     decodeSize: Dp? = null,
@@ -2763,7 +2638,7 @@ internal fun Artwork(
     if (decodeSize != null) {
         val decodePx = with(LocalDensity.current) { decodeSize.roundToPx() }
         Box(modifier.clip(shape)) {
-            ArtworkLayers(decodePx, url, title, downloaded, badgeSize, criticalWarningSeconds, reloadKey, fallbackUrl, placeholder)
+            ArtworkLayers(decodePx, url, title, downloaded, badgeSize, reloadKey, fallbackUrl, placeholder)
         }
         return
     }
@@ -2776,7 +2651,7 @@ internal fun Artwork(
             )
             else -> with(density) { 400.dp.roundToPx() }
         }
-        ArtworkLayers(decodePx, url, title, downloaded, badgeSize, criticalWarningSeconds, reloadKey, fallbackUrl, placeholder)
+        ArtworkLayers(decodePx, url, title, downloaded, badgeSize, reloadKey, fallbackUrl, placeholder)
     }
 }
 
@@ -2787,7 +2662,6 @@ private fun BoxScope.ArtworkLayers(
     title: String,
     downloaded: Boolean,
     badgeSize: Dp,
-    criticalWarningSeconds: Int?,
     reloadKey: Any?,
     fallbackUrl: String?,
     placeholder: Brush,
@@ -2823,24 +2697,6 @@ private fun BoxScope.ArtworkLayers(
                         .graphicsLayer { alpha = artworkAlpha }
                         .background(Color.White),
                     contentScale = ContentScale.Crop,
-                )
-            }
-        }
-        criticalWarningSeconds?.let { seconds ->
-            Surface(
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.97f),
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            ) {
-                Text(
-                    pluralStringResource(
-                        R.plurals.playback_will_stop_warning,
-                        seconds,
-                        seconds,
-                    ),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    style = MaterialTheme.typography.labelLarge.merge(ru.e1173.nookast.designsystem.NookPlayerType.bold),
-                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -3055,22 +2911,6 @@ private fun placeholderBrush(title: String): Brush {
     return Brush.linearGradient(listOf(pair.first, pair.second))
 }
 
-private fun criticalWarningSeconds(state: PlaybackUiState): Int? {
-    if (state.isLocalSource || state.streamReachability != StreamReachability.UNAVAILABLE) return null
-    // Only a stream that plays and has something left in the buffer can «stop in N seconds»: at a start
-    // without a connection nothing is playing yet (user, 11.11.2026: the warning showed then).
-    if (!state.isPlaying || state.bufferedAheadMs <= 0L) return null
-    if (state.bufferedAheadMs >= 60_000L) return null
-    return ceil(state.bufferedAheadMs.coerceAtLeast(1L) / 1_000.0).toInt().coerceAtLeast(1)
-}
-
-private fun cachedPercent(state: PlaybackUiState): Int {
-    if (state.isLocalSource) return 100
-    if (state.durationMs <= 0) return 0
-    return (((state.positionMs + state.bufferedAheadMs).coerceAtMost(state.durationMs) * 100) /
-        state.durationMs).toInt().coerceIn(0, 100)
-}
-
 private fun playbackFraction(state: PlaybackUiState): Float =
     if (state.durationMs <= 0) 0f
     else (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
@@ -3136,44 +2976,6 @@ private fun ListGlyph(modifier: Modifier = Modifier) {
 }
 
 /**
- * DEC-023, step 4: when the origin cannot be reached from this device, offer to download the
- * episode to the PinePods server and play the server copy; shows the server task's progress.
- */
-@Composable
-private fun ServerCopySection(state: PlaybackUiState, onDownloadToServer: () -> Unit) {
-    if (state.isLocalSource || state.currentEpisodeId == null) return
-    val progress = state.serverDownload
-    // The server must answer for a copy on it to help (user, 11.11.2026: the offer showed while the same
-    // card said the server was unreachable).
-    val serverReachable = state.streamReachability != StreamReachability.UNAVAILABLE
-    val originUnavailable = serverReachable && (state.isUsingPinePodsFallback || state.originStalled)
-    val textStyle = MaterialTheme.typography.bodySmall
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        when {
-            state.isServerCopySource -> Text(stringResource(R.string.server_copy_playing), style = textStyle, color = muted)
-            progress is ServerDownloadProgress.Running -> {
-                Text(stringResource(R.string.server_copy_downloading, progress.percent), style = textStyle, color = muted)
-                LinearProgressIndicator(
-                    progress = { (progress.percent / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            progress == ServerDownloadProgress.Ready -> Text(stringResource(R.string.server_copy_ready), style = textStyle, color = muted)
-            progress == ServerDownloadProgress.Disabled -> Text(stringResource(R.string.server_copy_disabled), style = textStyle, color = muted)
-            progress == ServerDownloadProgress.Failed -> {
-                Text(stringResource(R.string.server_copy_failed), style = textStyle, color = muted)
-                if (serverReachable) NookButton(variant = NookButtonVariant.Tonal, onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_retry)) }
-            }
-            originUnavailable && !state.isOnServer -> {
-                Text(stringResource(R.string.server_copy_offer_hint), style = textStyle, color = muted)
-                NookButton(variant = NookButtonVariant.Tonal, onClick = onDownloadToServer) { Text(stringResource(R.string.server_copy_offer)) }
-            }
-        }
-    }
-}
-
-/**
  * The reachability the source chip shows: «Checking» only once a check has lasted
  * [CHECKING_REVEAL_MS]; a quick re-check after a start or a seek keeps the last known state
  * (user, 27.10.2026: no flashing at every micro-load).
@@ -3192,8 +2994,17 @@ private fun rememberSettledReachability(value: StreamReachability, waiting: Bool
 
 private const val CHECKING_REVEAL_MS = 1_500L
 
+/**
+ * ID3 chapter pictures already decoded, by their bytes: the player and the mini-player show the same
+ * one, and the mini-player must not decode it again at the start of the collapse.
+ */
+private val decodedChapterPictures = java.util.WeakHashMap<ByteArray, androidx.compose.ui.graphics.ImageBitmap>()
+
 /** An ID3 chapter picture, decoded no larger than about 1024 px; null when it is not an image. */
-private fun decodeChapterPicture(bytes: ByteArray): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
+private fun decodeChapterPicture(bytes: ByteArray): androidx.compose.ui.graphics.ImageBitmap? =
+    decodedChapterPictures[bytes] ?: decodeChapterPictureNow(bytes)?.also { decodedChapterPictures[bytes] = it }
+
+private fun decodeChapterPictureNow(bytes: ByteArray): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
     val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
     android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     var sample = 1
@@ -3293,7 +3104,6 @@ internal fun ChapterCover(
     podcastName: String?,
     cornerRadius: Dp,
     modifier: Modifier = Modifier,
-    criticalWarningSeconds: Int? = null,
     decodeSize: Dp? = null,
 ) {
     val chapterPicture: Any? = chapters.lastOrNull { it.startTimeMs <= positionMs }?.let { it.imageUrl ?: it.image }
@@ -3314,7 +3124,6 @@ internal fun ChapterCover(
                 downloaded = false,
                 badgeSize = 0.dp,
                 cornerRadius = cornerRadius,
-                criticalWarningSeconds = criticalWarningSeconds,
                 decodeSize = decodeSize,
                 modifier = Modifier.fillMaxSize(),
             )

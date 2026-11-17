@@ -144,6 +144,7 @@ object NookIcons {
     }
     val Activity: ImageVector by lazy { stroked("activity", LINE, "M22 12h-4l-3 9L9 3l-3 9H2") }
     val Info: ImageVector by lazy { stroked("info", LINE, "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z", "M12 16v-4", "M12 8h.01") }
+    val Refresh: ImageVector by lazy { stroked("refresh", LINE, "M21 12a9 9 0 1 1-2.64-6.36", "M21 3v6h-6") }
 
     private fun stroked(name: String, width: Float, vararg paths: String): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply { paths.forEach { strokePath(it, width) } }.build()

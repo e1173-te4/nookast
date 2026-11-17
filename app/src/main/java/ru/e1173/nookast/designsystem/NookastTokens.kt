@@ -5,8 +5,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Colour themes of DEC-017. A theme changes colours (and later the timeline thumb) only; the
- * geometry is shared by all of them.
+ * Colour themes of DEC-017 and DEC-061. A theme changes colours, the night glow and the timeline
+ * (track and thumb) only; the geometry is shared by all of them.
  */
 enum class ThemePalette {
     /** Signature theme of the app icon: plum night, lavender and a peach accent (user, 27.10.2026); the
@@ -15,9 +15,31 @@ enum class ThemePalette {
     LAVENDER,
     AUTUMN,
     WINTER,
-    MINT;
+    MINT,
+
+    /** «Эфир»: night radio, graphite and fuchsia (user, 13.11.2026, the eight-theme mock). */
+    ON_AIR,
+
+    /** «Светлячок»: moss and wormwood with a firefly light (user, 13.11.2026). */
+    FIREFLY,
+
+    /** «Маяк»: a teal sea and a rust beacon (user, 13.11.2026). */
+    BEACON;
+
+    /** The three themes of 13.11.2026. */
+    val isNew: Boolean get() = this == ON_AIR || this == FIREFLY || this == BEACON
+
+    /**
+     * Whether the settings list marks this theme «new» in the build [versionCode]: only in the two
+     * releases that bring the themes, 1.2.6 (71) and 1.2.7 (72); from 1.2.8 the mark is gone
+     * (user, 14.11.2026).
+     */
+    fun showsNewBadge(versionCode: Int): Boolean = isNew && versionCode <= NEW_BADGE_LAST_VERSION_CODE
 
     companion object {
+        /** The last build whose theme list shows «new»: 1.2.7. */
+        const val NEW_BADGE_LAST_VERSION_CODE = 72
+
         fun fromStoredValue(value: String?): ThemePalette = entries.firstOrNull { it.name == value } ?: SIGNATURE
     }
 }
@@ -72,6 +94,9 @@ fun nookastColors(palette: ThemePalette, dark: Boolean): NookastColors = when (p
     ThemePalette.WINTER -> if (dark) WinterDark else WinterLight
     ThemePalette.MINT -> if (dark) MintDark else MintLight
     ThemePalette.SIGNATURE -> if (dark) SignatureDark else SignatureLight
+    ThemePalette.ON_AIR -> if (dark) OnAirDark else OnAirLight
+    ThemePalette.FIREFLY -> if (dark) FireflyDark else FireflyLight
+    ThemePalette.BEACON -> if (dark) BeaconDark else BeaconLight
 }
 
 private val LavenderLight = NookastColors(
@@ -280,6 +305,141 @@ private val SignatureDark = NookastColors(
     success = Color(0xFF21C57B),
     divider = Color(0xFF34224A),
     isDark = true,
+)
+
+// The three themes of the eight-theme mock (user, 13.11.2026, DEC-061): values of its THEMES array;
+// surfaces follow the existing night themes (a nearly opaque card, the seek glass at 75 %).
+private val OnAirLight = NookastColors(
+    background = Color(0xFFF1F5F9),
+    textPrimary = Color(0xFF121212),
+    textSecondary = Color(0xFF5B6880),
+    accent = Color(0xFFDB2777),
+    accentStrong = Color(0xFF9D174D),
+    onAccent = Color(0xFFFFFFFF),
+    artworkPlaceholder = Color(0xFFE2E8F0),
+    track = Color(0xFFCBD5E1),
+    trackFill = Color(0xFFDB2777),
+    surface = Color(0xFFFFFFFF),
+    surfaceOutline = Color(0x22334155),
+    seekSurface = Color(0xFFFFFFFF),
+    tintContainer = Color(0xFFFCE9F1),
+    listened = Color(0xFF0891B2),
+    success = Color(0xFF0891B2),
+    divider = Color(0x22334155),
+    isDark = false,
+    cardOutline = Color(0x22334155),
+    accentText = Color(0xFFBE185D),
+    // White on the fuchsia itself is 4.4:1: labelled fills take the deep one.
+    accentFill = Color(0xFF9D174D),
+)
+
+private val OnAirDark = NookastColors(
+    background = Color(0xFF121318),
+    textPrimary = Color(0xFFF1F5F9),
+    textSecondary = Color(0xFF8E9BB0),
+    accent = Color(0xFFEC4899),
+    accentStrong = Color(0xFF9D174D),
+    onAccent = Color(0xFF1A0610),
+    artworkPlaceholder = Color(0xFF1F2937),
+    track = Color(0xFF1F2937),
+    trackFill = Color(0xFFEC4899),
+    surface = Color(0xE61F2937),
+    surfaceOutline = Color(0x99334155),
+    seekSurface = Color(0xBF1F2937),
+    tintContainer = Color(0x33EC4899),
+    listened = Color(0xFF22D3EE),
+    success = Color(0xFF22D3EE),
+    divider = Color(0xFF2A3444),
+    isDark = true,
+    accentText = Color(0xFFF472B6),
+)
+
+private val FireflyLight = NookastColors(
+    background = Color(0xFFEEF0E6),
+    textPrimary = Color(0xFF0F1F17),
+    textSecondary = Color(0xFF56664F),
+    accent = Color(0xFF5E7F2C),
+    accentStrong = Color(0xFF3E5A3F),
+    onAccent = Color(0xFFFFFFFF),
+    artworkPlaceholder = Color(0xFFE3E6D8),
+    track = Color(0xFFC7CBB8),
+    trackFill = Color(0xFF5E7F2C),
+    surface = Color(0xFFFFFFFF),
+    surfaceOutline = Color(0x263E5A3F),
+    seekSurface = Color(0xFFFFFFFF),
+    tintContainer = Color(0xFFE7EDDD),
+    listened = Color(0xFF3E7A3F),
+    success = Color(0xFF3E7A3F),
+    divider = Color(0x263E5A3F),
+    isDark = false,
+    cardOutline = Color(0x263E5A3F),
+    accentText = Color(0xFF3E5A3F),
+)
+
+private val FireflyDark = NookastColors(
+    background = Color(0xFF0C1812),
+    textPrimary = Color(0xFFE4E7D8),
+    textSecondary = Color(0xFF93A28F),
+    accent = Color(0xFFDCF27A),
+    accentStrong = Color(0xFF7E9B3A),
+    onAccent = Color(0xFF14200B),
+    artworkPlaceholder = Color(0xFF1E3A2E),
+    track = Color(0xFF2A4536),
+    trackFill = Color(0xFFDCF27A),
+    surface = Color(0xE61E3A2E),
+    surfaceOutline = Color(0x993E5A3F),
+    seekSurface = Color(0xBF1E3A2E),
+    tintContainer = Color(0x26DCF27A),
+    listened = Color(0xFFA7D58A),
+    success = Color(0xFFA7D58A),
+    divider = Color(0xFF2C4636),
+    isDark = true,
+    accentText = Color(0xFFC9DE74),
+)
+
+private val BeaconLight = NookastColors(
+    background = Color(0xFFF3ECE2),
+    textPrimary = Color(0xFF0A0F14),
+    textSecondary = Color(0xFF2E5F63),
+    accent = Color(0xFFC6601F),
+    accentStrong = Color(0xFF8E4013),
+    onAccent = Color(0xFFFFFFFF),
+    artworkPlaceholder = Color(0xFFE8DFD2),
+    track = Color(0xFFBFD6D4),
+    trackFill = Color(0xFFC6601F),
+    surface = Color(0xFFFFFFFF),
+    surfaceOutline = Color(0x260F3D3E),
+    seekSurface = Color(0xFFFFFFFF),
+    tintContainer = Color(0xFFF9EEE6),
+    listened = Color(0xFF2E6F73),
+    success = Color(0xFF2E6F73),
+    divider = Color(0x260F3D3E),
+    isDark = false,
+    cardOutline = Color(0x220F3D3E),
+    accentText = Color(0xFFA84F18),
+    // White on the rust itself is 4.1:1.
+    accentFill = Color(0xFF8E4013),
+)
+
+private val BeaconDark = NookastColors(
+    background = Color(0xFF0A1114),
+    textPrimary = Color(0xFFEADCC8),
+    textSecondary = Color(0xFF86B4B8),
+    accent = Color(0xFFE07433),
+    accentStrong = Color(0xFF9A4413),
+    onAccent = Color(0xFF1A0A02),
+    artworkPlaceholder = Color(0xFF0F3D3E),
+    track = Color(0xFF1C4A4C),
+    trackFill = Color(0xFFE07433),
+    surface = Color(0xE60F3D3E),
+    surfaceOutline = Color(0x992E6F73),
+    seekSurface = Color(0xBF0F3D3E),
+    tintContainer = Color(0x33E07433),
+    listened = Color(0xFF7FB3B8),
+    success = Color(0xFF7FB3B8),
+    divider = Color(0xFF1E4A4C),
+    isDark = true,
+    accentText = Color(0xFFF09A62),
 )
 
 /** This colour with its alpha scaled by [factor]; `copy(alpha = …)` would replace a token's own alpha. */

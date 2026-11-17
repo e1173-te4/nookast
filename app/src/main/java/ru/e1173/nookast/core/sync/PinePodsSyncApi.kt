@@ -45,6 +45,13 @@ data class ServerEpisode(
     val completed: Boolean,
     val durationSeconds: Long?,
     val queued: Boolean,
+    /**
+     * The id the server answered for. PinePods 0.9.1+ merged duplicate episodes and points requests
+     * carrying the old id at the merged one (EpisodeIDAliases), so this differs from [episodeId] then.
+     */
+    val currentId: Int = episodeId,
+    /** `podcastid` of the answer, when the server sent one. */
+    val podcastId: Int? = null,
 )
 
 /** A queue row before canonicalisation (§6.2). */
@@ -105,6 +112,8 @@ class PinePodsSyncApi(
             completed = episode.optBoolean("completed"),
             durationSeconds = episode.optLongOrNull("episodeduration"),
             queued = episode.optBoolean("is_queued"),
+            currentId = episode.optInt("episodeid", 0).takeIf { it > 0 } ?: episodeId,
+            podcastId = episode.optInt("podcastid", 0).takeIf { it > 0 },
         )
     }
 
@@ -153,16 +162,20 @@ class PinePodsSyncApi(
     fun removeQueued(session: AuthSession, episodeId: Int) =
         post(session, "remove_queued_pod", episodeBody(session, episodeId), "data")
 
-    /** Always the complete desired list: partial lists duplicate positions on the server. */
+    /**
+     * Always the complete desired list: partial lists duplicate positions on the server. The server
+     * only renumbers rows that exist (0.9.2 `reorder_queue` is UPDATE-only), so an episode that left
+     * the queue meanwhile (finished: 0.9.1+ removes it) is never put back by this call. `episodes`
+     * is the type-aware form of 0.9.1+; `episode_ids` stays for 0.9.0, which ignores the other.
+     */
     fun reorder(session: AuthSession, episodeIds: List<Int>) {
         require(episodeIds.all { it > 0 } && episodeIds.distinct().size == episodeIds.size)
         val url = endpoint(session, "reorder_queue").newBuilder()
             .addQueryParameter("user_id", session.userId.toString())
             .build()
-        val json = call(
-            session,
-            authorized(session, url).post(JSONObject().put("episode_ids", JSONArray(episodeIds)).toJsonBody()),
-        )
+        val episodes = JSONArray(episodeIds.map { JSONObject().put("episode_id", it).put("is_youtube", false) })
+        val body = JSONObject().put("episodes", episodes).put("episode_ids", JSONArray(episodeIds))
+        val json = call(session, authorized(session, url).post(body.toJsonBody()))
         acknowledge(json, "message")
     }
 
@@ -187,7 +200,7 @@ class PinePodsSyncApi(
 
     /** Server version, or null when the answer is not the expected JSON (used by PROTOCOL, §8). */
     fun version(session: AuthSession): String? = runCatching {
-        call(session, Request.Builder().url(endpoint(session, "get_pinepods_version")).get())
+        call(session, request(session, "get_pinepods_version").get())
             .optText("data").takeIf(String::isNotBlank)
     }.getOrNull()
 

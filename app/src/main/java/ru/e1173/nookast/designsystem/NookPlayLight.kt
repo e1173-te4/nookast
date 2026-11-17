@@ -9,6 +9,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,8 +42,12 @@ class PlayLight internal constructor(
     private val pulses: Map<Int, Animatable<Float, *>>,
     private val scope: CoroutineScope,
     private val reducedMotion: Boolean,
+    private val tintState: State<androidx.compose.ui.graphics.Color> = mutableStateOf(androidx.compose.ui.graphics.Color.Unspecified),
 ) {
     val light: Float get() = lightState.value
+
+    /** The light's colour (DEC-069): the cover's, amber at the buffer line, coral when it is nearly empty; Unspecified keeps the accent. */
+    val tint: androidx.compose.ui.graphics.Color get() = tintState.value
     val breath: Float get() = breathState.value
     val voice: Float get() = voiceSource.value()
     fun pulse(delayMs: Int): Float = pulses[delayMs]?.value ?: 0f
@@ -87,8 +93,19 @@ val LocalPlayLight = compositionLocalOf<PlayLight?> { null }
 /** Keep a light's alpha within 1 after the pulse lifted it. */
 fun lit(alpha: Float): Float = alpha.coerceIn(0f, 1f)
 
+/** The light's colour, or [fallback] (the accent) when it has none. */
+fun PlayLight?.tintOr(fallback: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
+    this?.tint?.takeIf { it.isSpecified }?.copy(alpha = fallback.alpha) ?: fallback
+
 @Composable
-fun rememberPlayLight(playing: Boolean, buffering: Boolean, voice: () -> Float = { 1f }): PlayLight {
+fun rememberPlayLight(
+    playing: Boolean,
+    buffering: Boolean,
+    voice: () -> Float = { 1f },
+    tint: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified,
+    /** At the buffer line the light breathes slower (DEC-069): 3.2 s amber, 2.4 s coral; null otherwise. */
+    alertBreathMs: Int? = null,
+): PlayLight {
     val reduced = rememberReducedMotion()
     val light = animateFloatAsState(
         if (playing) 1f else 0f,
@@ -106,15 +123,16 @@ fun rememberPlayLight(playing: Boolean, buffering: Boolean, voice: () -> Float =
         }
     }
     val breath = remember { Animatable(1f) }
-    LaunchedEffect(breathing, reduced) {
-        if (!breathing) {
+    LaunchedEffect(breathing, reduced, alertBreathMs) {
+        val period = alertBreathMs ?: BREATH_PERIOD_MS
+        if (!breathing && alertBreathMs == null) {
             breath.animateTo(1f, NookMotion.standard())
         } else if (reduced) {
             breath.animateTo(BREATH_REDUCED, NookMotion.standard())
         } else {
             while (true) {
-                breath.animateTo(BREATH_LOW, tween(BREATH_PERIOD_MS / 2, easing = FastOutSlowInEasing))
-                breath.animateTo(1f, tween(BREATH_PERIOD_MS / 2, easing = FastOutSlowInEasing))
+                breath.animateTo(BREATH_LOW, tween(period / 2, easing = FastOutSlowInEasing))
+                breath.animateTo(1f, tween(period / 2, easing = FastOutSlowInEasing))
             }
         }
     }
@@ -126,7 +144,13 @@ fun rememberPlayLight(playing: Boolean, buffering: Boolean, voice: () -> Float =
             .associateWith { Animatable(0f) }
     }
     val breathState = remember { derivedBreath(breath) }
-    return remember(reduced) { PlayLight(light, breathState, voiceState, pulses, scope, reduced) }
+    val tintState = androidx.compose.animation.animateColorAsState(
+        if (tint.isSpecified) tint else androidx.compose.ui.graphics.Color.Transparent,
+        NookMotion.slow(),
+        label = "playLightTint",
+    )
+    val shownTint = remember(tint.isSpecified) { derivedStateOf { if (tint.isSpecified) tintState.value else androidx.compose.ui.graphics.Color.Unspecified } }
+    return remember(reduced, shownTint) { PlayLight(light, breathState, voiceState, pulses, scope, reduced, shownTint) }
 }
 
 private fun derivedBreath(breath: Animatable<Float, *>): State<Float> = object : State<Float> {
@@ -150,7 +174,7 @@ fun androidx.compose.ui.Modifier.seekPlayReflection(playOnRight: Boolean): andro
     val colors = LocalNookastColors.current
     val light = LocalPlayLight.current
     if (light == null || !colors.isDark) return this
-    val accent = colors.accent
+    val accent = light.tintOr(colors.accent)
     return drawBehind {
         val k = light.reflection(PlayLightDelay.SEEK)
         val r = size.minDimension / 2f

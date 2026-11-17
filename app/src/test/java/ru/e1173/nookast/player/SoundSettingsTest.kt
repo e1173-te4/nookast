@@ -79,7 +79,7 @@ class SoundSettingsTest {
         val store = SoundSettingsStore(Memory())
         store.setPodcast(a, PodcastSound(volumeDb = 99))
         store.setGlobal(GlobalSound(clarity = 9, depth = -2, speakerTrimDb = 40))
-        assertEquals(24, store.podcast(a).volumeDb)
+        assertEquals(30, store.podcast(a).volumeDb)
         assertEquals(3, store.global().clarity)
         assertEquals(0, store.global().depth)
         assertEquals(12, store.global().speakerTrimDb)

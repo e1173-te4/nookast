@@ -59,6 +59,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -248,6 +249,8 @@ internal fun PodcastScreen(
     onMarkEpisodesUnplayed: (List<QueueListEntry>) -> Unit,
     onUnsubscribe: (Int) -> Unit,
     onChangeFeedUrl: (Int, String, (FeedUrlChangeResult) -> Unit) -> Unit = { _, _, _ -> },
+    /** The server reads the feed now: a pull (conditional read) or «Refresh from feed» (full read). */
+    onRefreshFromFeed: (podcastId: Int, full: Boolean) -> Unit = { _, _ -> },
     onLoadPodcast: (Int) -> Unit = {},
     /** Search and add, from the header (audit 3.9): opens Route.Search in this tab's stack. */
     onOpenSearch: (() -> Unit)? = null,
@@ -294,14 +297,20 @@ internal fun PodcastScreen(
     // 10.11.2026: the bar showed the bare base colour as a strip above the panes, light and dark).
     val screenHaze = dev.chrisbanes.haze.rememberHazeState()
     Box(Modifier.fillMaxSize()) {
-    Box(Modifier.fillMaxSize().then(if (wide) Modifier.hazeSource(screenHaze) else Modifier).background(podcastBackground)) {
+    Box(Modifier.fillMaxSize().background(podcastBackground)) {
         // Wide: the open podcast's light lies behind both panes and the status bar (user,
-        // 29.10.2026: it was cut at every edge of the pane).
-        if (wide && selected != null) {
-            ArtworkTintBackdrop(
-                selected.artworkUrl.orEmpty().ifBlank { details?.artworkUrl.orEmpty() },
-                Modifier.matchParentSize(),
-            )
+        // 29.10.2026: it was cut at every edge of the pane). Only this layer feeds the status-bar
+        // glass: with the scrolling lists in its source the glass was blurred again on every frame
+        // of a scroll (B3, DEC-071).
+        if (wide) {
+            Box(Modifier.matchParentSize().hazeSource(screenHaze).background(podcastBackground)) {
+                if (selected != null) {
+                    ArtworkTintBackdrop(
+                        selected.artworkUrl.orEmpty().ifBlank { details?.artworkUrl.orEmpty() },
+                        Modifier.matchParentSize(),
+                    )
+                }
+            }
         }
         val library: @Composable (Modifier, Int?) -> Unit = { paneModifier, highlighted ->
             PodcastLibraryPanel(
@@ -373,6 +382,9 @@ internal fun PodcastScreen(
                 onMarkEpisodesUnplayedCommitted = markUnplayedCommitted,
                 onUnsubscribe = onUnsubscribe,
                 onChangeFeedUrl = onChangeFeedUrl,
+                onRefreshFromFeed = onRefreshFromFeed,
+                feedRefreshing = podcastId in state.podcastFeedRefreshing,
+                feedRefreshFailed = podcastId in state.podcastFeedRefreshFailed,
                 feedProblem = state.serverFeedProblems[podcastId],
                 feedReadByPhone = podcastId in state.feedsReadByPhone,
                 modifier = paneModifier,
@@ -735,6 +747,8 @@ private fun PodcastLibraryPanel(
                                 maxWidth >= 460.dp -> 3
                                 else -> 2
                             }
+                            // Covers decode at the cell's own size, without a measuring box per tile (B3, DEC-071).
+                            val side = (maxWidth - (if (framed) 6.dp else 0.dp) - 9.dp * (columns - 1)) / columns
                             LazyVerticalGrid(
                                 flingBehavior = deviceFling(),
                                 columns = GridCells.Fixed(columns),
@@ -752,6 +766,7 @@ private fun PodcastLibraryPanel(
                                 gridItems(sorted, key = PodcastSubscriptionEntity::podcastId) { podcast ->
                                     PodcastGridItem(
                                         podcast = podcast,
+                                        coverSize = side,
                                         freshness = freshness[podcast.podcastId],
                                         pressed = podcast.podcastId == pressedPodcastIdForPreview,
                                         onClick = { onOpenPodcast(podcast.podcastId) },
@@ -906,6 +921,7 @@ internal fun PodcastViewToggle(
 @Composable
 private fun PodcastGridItem(
     podcast: PodcastSubscriptionEntity,
+    coverSize: androidx.compose.ui.unit.Dp,
     freshness: ru.e1173.nookast.data.PodcastFreshness?,
     pressed: Boolean,
     onClick: () -> Unit,
@@ -930,6 +946,7 @@ private fun PodcastGridItem(
                 downloaded = false,
                 badgeSize = 14.dp,
                 reloadKey = podcast.refreshedAtEpochMs,
+                decodeSize = coverSize,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
@@ -1059,6 +1076,9 @@ private fun PodcastDetailsPanel(
     onMarkEpisodesUnplayedCommitted: (List<QueueListEntry>, (Boolean) -> Unit) -> Unit,
     onUnsubscribe: (Int) -> Unit,
     onChangeFeedUrl: (Int, String, (FeedUrlChangeResult) -> Unit) -> Unit = { _, _, _ -> },
+    onRefreshFromFeed: (Int, Boolean) -> Unit = { _, _ -> },
+    feedRefreshing: Boolean = false,
+    feedRefreshFailed: Boolean = false,
     feedProblem: ru.e1173.nookast.data.remote.ServerFeedProblem? = null,
     feedReadByPhone: Boolean = false,
     modifier: Modifier = Modifier,
@@ -1069,6 +1089,20 @@ private fun PodcastDetailsPanel(
 ) {
     val name = details?.name.orEmpty().ifBlank { catalog?.name.orEmpty() }
     var feedUrlDialog by remember(podcastId) { mutableStateOf(false) }
+    var cleanupDialog by remember(podcastId) { mutableStateOf(false) }
+    if (cleanupDialog) {
+        val cleanupSettings = androidx.lifecycle.viewmodel.compose.viewModel<PlayerSettingsViewModel>()
+        val defaults by cleanupSettings.settings.collectAsStateWithLifecycle()
+        val (played, days) = remember(podcastId) { cleanupSettings.podcastCleanup(podcastId) }
+        PodcastDownloadCleanupDialog(
+            defaultDeletePlayed = defaults.deletePlayedDownloads,
+            defaultDeleteAfterDays = defaults.deleteDownloadsAfterDays,
+            deletePlayed = played,
+            deleteAfterDays = days,
+            onChange = { newPlayed, newDays -> cleanupSettings.setPodcastCleanup(podcastId, newPlayed, newDays) },
+            onDismiss = { cleanupDialog = false },
+        )
+    }
     if (feedUrlDialog) {
         FeedUrlDialog(
             currentUrl = catalog?.feedUrl.orEmpty(),
@@ -1229,7 +1263,12 @@ private fun PodcastDetailsPanel(
         val listScrolled by remember {
             derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
         }
-        Box(Modifier.fillMaxSize()) {
+        ru.e1173.nookast.designsystem.NookPullToRefresh(
+            refreshing = feedRefreshing,
+            onRefresh = { onRefreshFromFeed(podcastId, false) },
+            modifier = Modifier.fillMaxSize(),
+            topInset = LocalTopInset.current + if (showBack) 56.dp else 0.dp,
+        ) {
         LazyColumn(
             flingBehavior = deviceFling(),
             modifier = Modifier.fillMaxSize().then(if (showBack) Modifier.hazeSource(podcastHaze).glassEdgeFade() else Modifier),
@@ -1265,6 +1304,8 @@ private fun PodcastDetailsPanel(
                     },
                     onUnsubscribe = { onUnsubscribe(podcastId) },
                     onChangeFeedUrl = { feedUrlDialog = true },
+                    onRefreshFromFeed = { onRefreshFromFeed(podcastId, true) },
+                    onDeviceDownloads = { cleanupDialog = true },
                     settingsMenuInitiallyExpanded = settingsMenuInitiallyExpanded,
                     renderMenusInPlace = renderMenusInPlace,
                 )
@@ -1278,7 +1319,7 @@ private fun PodcastDetailsPanel(
             if (detailsLoading && allEpisodes.isEmpty()) {
                 item { ru.e1173.nookast.designsystem.NookSkeletonRows(5, artwork = false) }
             }
-            if (actionError || selectionCommitFailed) {
+            if (actionError || selectionCommitFailed || feedRefreshFailed) {
                 item {
                     Surface(
                         shape = ru.e1173.nookast.designsystem.NookShapes.m,
@@ -1286,7 +1327,7 @@ private fun PodcastDetailsPanel(
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ) {
                         Text(
-                            stringResource(R.string.podcast_action_error),
+                            stringResource(if (feedRefreshFailed && !actionError && !selectionCommitFailed) R.string.podcast_refresh_failed else R.string.podcast_action_error),
                             modifier = Modifier.padding(12.dp),
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1406,6 +1447,8 @@ private fun PodcastHero(
     onContinue: () -> Unit,
     onUnsubscribe: () -> Unit,
     onChangeFeedUrl: () -> Unit = {},
+    onRefreshFromFeed: () -> Unit = {},
+    onDeviceDownloads: () -> Unit = {},
     settingsMenuInitiallyExpanded: Boolean = false,
     renderMenusInPlace: Boolean = false,
     /** How far the page has scrolled past the top, in pixels: the cover lags at 0.3 (design audit 4.6). */
@@ -1509,6 +1552,8 @@ private fun PodcastHero(
                             largeControls = largeControls,
                             onUnsubscribe = onUnsubscribe,
                             onChangeFeedUrl = onChangeFeedUrl,
+                            onRefreshFromFeed = onRefreshFromFeed,
+                            onDeviceDownloads = onDeviceDownloads,
                             initiallyExpanded = settingsMenuInitiallyExpanded,
                             renderInPlace = renderMenusInPlace,
                         )
@@ -1525,6 +1570,8 @@ private fun PodcastSettingsMenu(
     largeControls: Boolean,
     onUnsubscribe: () -> Unit,
     onChangeFeedUrl: () -> Unit = {},
+    onRefreshFromFeed: () -> Unit = {},
+    onDeviceDownloads: () -> Unit = {},
     initiallyExpanded: Boolean = false,
     renderInPlace: Boolean = false,
 ) {
@@ -1563,6 +1610,14 @@ private fun PodcastSettingsMenu(
                             expanded = false
                             onChangeFeedUrl()
                         },
+                        onRefreshFromFeed = {
+                            expanded = false
+                            onRefreshFromFeed()
+                        },
+                        onDeviceDownloads = {
+                            expanded = false
+                            onDeviceDownloads()
+                        },
                         onUnsubscribe = {
                             expanded = false
                             onUnsubscribe()
@@ -1597,6 +1652,8 @@ private fun PodcastSettingsMenuItems(
     largeControls: Boolean,
     onUnsubscribe: () -> Unit,
     onChangeFeedUrl: () -> Unit = {},
+    onRefreshFromFeed: () -> Unit = {},
+    onDeviceDownloads: () -> Unit = {},
 ) {
     Text(
         stringResource(R.string.podcast_actions_title),
@@ -1609,25 +1666,29 @@ private fun PodcastSettingsMenuItems(
         style = ru.e1173.nookast.designsystem.NookType.rowTitle,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    DropdownMenuItem(
-        text = { Text(stringResource(R.string.podcast_change_feed_url), style = ru.e1173.nookast.designsystem.NookType.rowTitle) },
-        leadingIcon = {
-            Surface(
-                modifier = Modifier.size(if (largeControls) 38.dp else 30.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        "RSS",
-                        style = ru.e1173.nookast.designsystem.NookType.navLabel.scaled(if (largeControls) 1.222f else 1f),
-                        color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
-                    )
-                }
-            }
-        },
+    ru.e1173.nookast.designsystem.NookDiscMenuItem(
+        text = stringResource(R.string.podcast_change_feed_url),
         onClick = onChangeFeedUrl,
-        modifier = Modifier.heightIn(min = if (largeControls) 72.dp else 48.dp),
+        largeControls = largeControls,
+        glyph = {
+            Text(
+                "RSS",
+                style = ru.e1173.nookast.designsystem.NookType.navLabel.scaled(if (largeControls) 1.222f else 1f),
+                color = ru.e1173.nookast.designsystem.LocalNookastColors.current.accentText,
+            )
+        },
+    )
+    ru.e1173.nookast.designsystem.NookDiscMenuItem(
+        text = stringResource(R.string.podcast_refresh_from_feed),
+        onClick = onRefreshFromFeed,
+        largeControls = largeControls,
+        icon = ru.e1173.nookast.designsystem.NookIcons.Refresh,
+    )
+    ru.e1173.nookast.designsystem.NookDiscMenuItem(
+        text = stringResource(R.string.device_cleanup_podcast),
+        onClick = onDeviceDownloads,
+        largeControls = largeControls,
+        icon = ru.e1173.nookast.designsystem.NookIcons.Download,
     )
     DropdownMenuItem(
         text = {

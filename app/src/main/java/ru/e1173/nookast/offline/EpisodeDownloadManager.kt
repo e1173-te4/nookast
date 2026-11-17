@@ -53,17 +53,16 @@ class EpisodeDownloadManager(context: Context) {
     private val sessionStore = appContext.appGraph.session
 
     /** [allowMetered] false: automatic downloads wait for an unmetered network (P-04). */
-    fun enqueue(entry: QueueListEntry, allowMetered: Boolean = true): EpisodeDownloadState {
+    fun enqueue(entry: QueueListEntry, allowMetered: Boolean = true, podcastId: Int? = null): EpisodeDownloadState {
+        // The podcast decides which cleanup rules apply (DEC-064); the record keeps it from the start.
+        if (podcastId != null && entry.episodeId != 0) rememberPodcastId(entry.episodeId, podcastId)
         val session = sessionStore.load()
-        val sources = if (session != null) {
-            MediaSourceResolver.sources(
-                serverUrl = session.serverUrl,
-                episodeId = entry.episodeId,
-                rssMediaUrl = entry.mediaUrl.orEmpty(),
-            )
-        } else {
-            MediaSourceCandidates(primaryUrl = entry.mediaUrl, fallbackUrl = null)
-        }
+        val sources = downloadSources(
+            session = session,
+            episodeId = entry.episodeId,
+            rssMediaUrl = entry.mediaUrl,
+            onServer = appContext.appGraph.serverDownloads.isOnServer(entry.episodeId),
+        )
         return enqueue(
             episodeId = entry.episodeId,
             sources = sources,
@@ -72,6 +71,14 @@ class EpisodeDownloadManager(context: Context) {
             artworkUrl = entry.artworkUrl.orEmpty(),
             allowMetered = allowMetered,
         )
+    }
+
+    /** The podcast a download belongs to, as the download record knows it. */
+    fun podcastIdOf(episodeId: Int): Int? =
+        preferences.getInt(podcastIdKey(episodeId), 0).takeIf { it > 0 }
+
+    fun rememberPodcastId(episodeId: Int, podcastId: Int) {
+        if (podcastId > 0) preferences.edit { putInt(podcastIdKey(episodeId), podcastId) }
     }
 
     fun enqueue(item: MediaItem, allowMetered: Boolean = true): EpisodeDownloadState {
@@ -229,6 +236,7 @@ class EpisodeDownloadManager(context: Context) {
             remove(expectedBytesKey(episodeId))
             remove(completedAtKey(episodeId))
             remove(playedAtKey(episodeId))
+            remove(podcastIdKey(episodeId))
         }
         return fileDeleted
     }
@@ -253,6 +261,32 @@ class EpisodeDownloadManager(context: Context) {
             }
         }
         return removed
+    }
+
+    /**
+     * The server merged [old] into [new] (PinePods 0.9.1+): a finished download follows the new id,
+     * so lists keyed by the server's ids find the file again. The file keeps its name. Skipped while
+     * the transfer runs (its worker still reports under [old]) or when [new] has its own download.
+     */
+    @Synchronized
+    fun remapEpisodeId(old: Int, new: Int): Boolean {
+        if (old == new || old <= 0 || new <= 0) return false
+        if (!preferences.getBoolean(completedKey(old), false)) return false
+        if (preferences.contains(pathKey(new)) || preferences.contains(downloadIdKey(new))) return false
+        val all = preferences.all
+        preferences.edit {
+            ALL_PREFIXES.forEach { prefix ->
+                val value = all["$prefix$old"] ?: return@forEach
+                when (value) {
+                    is String -> putString("$prefix$new", value)
+                    is Long -> putLong("$prefix$new", value)
+                    is Boolean -> putBoolean("$prefix$new", value)
+                    is Int -> putInt("$prefix$new", value)
+                }
+                remove("$prefix$old")
+            }
+        }
+        return true
     }
 
     fun localUriIfReady(episodeId: Int): Uri? {
@@ -322,6 +356,8 @@ class EpisodeDownloadManager(context: Context) {
         podcastName: String,
         artworkUrl: String,
     ): File? = synchronized(ENQUEUE_LOCK) {
+        // Removed by the cleanup for being played (DEC-064): it streams, it is not filled again.
+        if (appContext.appGraph.downloadCleanupState.isCleaned(episodeId)) return@synchronized null
         val current = state(episodeId)
         if (current == EpisodeDownloadState.DOWNLOADED || current == EpisodeDownloadState.DOWNLOADING) {
             return@synchronized null
@@ -436,6 +472,8 @@ class EpisodeDownloadManager(context: Context) {
         allowMetered: Boolean,
     ): EpisodeDownloadState = synchronized(ENQUEUE_LOCK) {
         require(episodeId != 0)
+        // Asked for by hand: no longer an episode the cleanup removed and «download on playback» skips.
+        appContext.appGraph.downloadCleanupState.forgetCleaned(episodeId)
         val current = state(episodeId)
         if (current == EpisodeDownloadState.QUEUED ||
             current == EpisodeDownloadState.DOWNLOADING ||
@@ -542,6 +580,7 @@ class EpisodeDownloadManager(context: Context) {
     private fun expectedBytesKey(episodeId: Int) = "$EXPECTED_BYTES_PREFIX$episodeId"
     private fun completedAtKey(episodeId: Int) = "$COMPLETED_AT_PREFIX$episodeId"
     private fun playedAtKey(episodeId: Int) = "$PLAYED_AT_PREFIX$episodeId"
+    private fun podcastIdKey(episodeId: Int) = "$PODCAST_ID_PREFIX$episodeId"
 
     private fun clearCompletionMarker(episodeId: Int) {
         preferences.edit {
@@ -557,6 +596,15 @@ class EpisodeDownloadManager(context: Context) {
     ): Uri? {
         val path = preferences.getString(pathKey(episodeId), null) ?: return null
         val file = File(path)
+        val mediaType = cursor.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE)
+            .takeIf { it >= 0 && !cursor.isNull(it) }
+            ?.let(cursor::getString)
+        if (isHtmlMediaType(mediaType)) {
+            // A web page instead of audio (captive portal, error page): never a finished episode.
+            file.delete()
+            clearCompletionMarker(episodeId)
+            return null
+        }
         val totalBytes = cursor.longOrUnknown(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
             .takeIf { it > 0 }
         val downloadedBytes = cursor.longOrUnknown(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
@@ -589,12 +637,20 @@ class EpisodeDownloadManager(context: Context) {
         const val EXPECTED_BYTES_PREFIX = "expected_bytes_"
         const val COMPLETED_AT_PREFIX = "completed_at_"
         const val PLAYED_AT_PREFIX = "played_at_"
+        const val PODCAST_ID_PREFIX = "podcast_id_"
         const val NO_DOWNLOAD_ID = -1L
 
         /** Marks a transfer run by [EpisodeDownloadWorker] instead of DownloadManager. */
         const val IN_APP_DOWNLOAD_ID = -2L
         const val IN_APP_FAILED_PREFIX = "in_app_failed_"
         const val METERED_PREFIX = "allow_metered_"
+
+        /** Every per-episode key; [remapEpisodeId] moves them all. */
+        val ALL_PREFIXES = listOf(
+            DOWNLOAD_ID_PREFIX, PATH_PREFIX, SOURCE_PREFIX, FALLBACK_PREFIX, TITLE_PREFIX, PODCAST_PREFIX,
+            ARTWORK_PREFIX, COMPLETED_PREFIX, EXPECTED_BYTES_PREFIX, COMPLETED_AT_PREFIX, PLAYED_AT_PREFIX,
+            IN_APP_FAILED_PREFIX, METERED_PREFIX, PODCAST_ID_PREFIX,
+        )
 
         /** One lock for every instance: the player service and the UI used to race into two jobs (P-04). */
         val ENQUEUE_LOCK = Any()
@@ -618,6 +674,35 @@ internal fun playedAutoDownloadAction(played: Boolean, playedAtMs: Long?, nowMs:
 }
 
 internal const val PLAYED_AUTO_DOWNLOAD_KEEP_MS = 24L * 60 * 60 * 1_000
+
+/**
+ * Sources of a list, queue or automatic download. The copy stored on the server comes first
+ * (DEC-023): fastest, and it works when the origin is unreachable from the phone. Its URL carries
+ * only `user_id`; the worker adds the key at request time, so the key never reaches WorkManager's
+ * database or the system DownloadManager.
+ */
+internal fun downloadSources(
+    session: ru.e1173.nookast.auth.AuthSession?,
+    episodeId: Int,
+    rssMediaUrl: String?,
+    onServer: Boolean,
+): MediaSourceCandidates = if (session != null) {
+    MediaSourceResolver.sources(
+        serverUrl = session.serverUrl,
+        episodeId = episodeId,
+        rssMediaUrl = rssMediaUrl.orEmpty(),
+        userId = session.userId,
+        onServer = onServer,
+    )
+} else {
+    MediaSourceCandidates(primaryUrl = rssMediaUrl, fallbackUrl = null)
+}
+
+/** `text/html` or XHTML, with or without parameters: a page, never an episode. */
+internal fun isHtmlMediaType(contentType: String?): Boolean {
+    val type = contentType?.substringBefore(';')?.trim()?.lowercase() ?: return false
+    return type == "text/html" || type == "application/xhtml+xml"
+}
 
 internal fun isCompletedFileUsable(
     markedComplete: Boolean,

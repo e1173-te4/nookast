@@ -21,6 +21,14 @@ import androidx.compose.ui.unit.sp
  * reason in docs/plan/PROGRESS.md, never at the place of use.
  */
 
+/** Gaps between and inside rows: 4, 8, 12, 16 (the steps the settings and menus already use). */
+object NookSpacing {
+    val xs: Dp = 4.dp
+    val s: Dp = 8.dp
+    val m: Dp = 12.dp
+    val l: Dp = 16.dp
+}
+
 /** Corner radii (audit 2.1): 6, 10, 14, 18, 24 and the capsule. The player's geometry (DEC-024) keeps its own constants. */
 object NookShapes {
     val xsRadius: Dp = 6.dp

@@ -9,5 +9,7 @@ object CatalogSceneRegistry {
         NowPlayingControlPhoneLightPlaybackScene,
         IconControlsScene,
         BufferingScene,
+        ThemesScene,
+        ConnectionScene,
     )
 }

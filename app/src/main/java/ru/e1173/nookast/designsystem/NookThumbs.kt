@@ -146,21 +146,23 @@ internal fun DrawScope.drawPrismGem(center: Offset, unit: Float, glow: Float, st
     drawCircle(Color.White.copy(alpha = 0.95f), radius = 1.3f * unit, center = at(21.5f, 21f))
 }
 
+/** The soft peach halo of the Signature thumb: its centre and its brush of radius 1.9 [r]. */
+internal fun signatureHaloCenter(center: Offset, r: Float) = center + Offset(0f, r * 0.15f)
+
+internal fun signatureHaloBrush(center: Offset, r: Float, glow: Float): Brush = Brush.radialGradient(
+    listOf(Color(0xFFFFB497).copy(alpha = glow), Color(0xFFC9B2F0).copy(alpha = glow * 0.4f), Color.Transparent),
+    center = signatureHaloCenter(center, r),
+    radius = r * 1.9f,
+)
+
 /**
  * The Signature thumb, from the app icon (user, 29.10.2026): a disc of radius [r] at [center] where
  * a peach wave of hair meets a lavender one along an S-curve, lit from the top left, in a soft
  * peach halo ([glow]); no outline.
  */
-internal fun DrawScope.drawSignatureWave(center: Offset, r: Float, glow: Float) {
-    drawCircle(
-        Brush.radialGradient(
-            listOf(Color(0xFFFFB497).copy(alpha = glow), Color(0xFFC9B2F0).copy(alpha = glow * 0.4f), Color.Transparent),
-            center = center + Offset(0f, r * 0.15f),
-            radius = r * 1.9f,
-        ),
-        radius = r * 1.9f,
-        center = center + Offset(0f, r * 0.15f),
-    )
+internal fun DrawScope.drawSignatureWave(center: Offset, r: Float, glow: Float, halo: Boolean = true) {
+    // [halo] false: the caller draws the halo itself, breathing while it plays (DEC-061).
+    if (halo) drawCircle(signatureHaloBrush(center, r, glow), radius = r * 1.9f, center = signatureHaloCenter(center, r))
     // Turned a quarter: lavender on the left and peach on the right, as the icon's two halves
     // (user, 29.10.2026); the glint stays at the top left.
     rotate(-90f, center) {

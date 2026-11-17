@@ -107,6 +107,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
 
     // The app's own sound processing (audio rework З, DEC-060), after the voice tee.
     private val soundProcessor = SoundProcessor()
+    private val silenceSkipper = androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor()
     private var soundController: SoundController? = null
     private lateinit var mediaDeviceIdentity: MediaDeviceIdentity
     private val carSkipKeyMapper = CarSkipKeyMapper()
@@ -338,7 +339,15 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                 androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(androidx.media3.exoplayer.audio.TeeAudioProcessor(voiceTap), soundProcessor))
+                    // Our own silence skipper in Media3's chain, so the popover can say how much «Shorten pauses»
+                    // removed (DEC-071); the order is the default one: our processors, the skipper, Sonic.
+                    .setAudioProcessorChain(
+                        androidx.media3.exoplayer.audio.DefaultAudioSink.DefaultAudioProcessorChain(
+                            arrayOf(androidx.media3.exoplayer.audio.TeeAudioProcessor(voiceTap), soundProcessor),
+                            silenceSkipper,
+                            androidx.media3.common.audio.SonicAudioProcessor(),
+                        ),
+                    )
                     .build(),
                 voiceTap,
                 enabled = voiceOn,
@@ -387,6 +396,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
                     ?.let { dao.findEpisodeByMediaUrl(it) })?.podcastId
             },
             wideVehicleProfile = detectBuiltInMediaProfileId(mediaDeviceIdentity) != null,
+            skippedFrames = { silenceSkipper.skippedFrames },
         )
         mediaLibrarySession = MediaLibrarySession.Builder(
             this,
@@ -745,6 +755,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onDestroy() {
         persistFinalProgressSynchronously()
+        PlaybackActivity.openEpisodeId = null
         soundController?.stop()
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(foregroundObserver)
         followServerJob?.cancel()
@@ -907,6 +918,7 @@ class PlaybackService : MediaLibraryService(), Player.Listener {
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        PlaybackActivity.openEpisodeId = mediaItem?.mediaId?.toIntOrNull()?.takeIf { it != 0 }
         soundController?.itemChanged(mediaItem, repeat = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
         resumedHereAfterPause = false
         NativeChapters.reset(mediaItem?.mediaId)

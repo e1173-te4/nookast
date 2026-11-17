@@ -127,6 +127,15 @@ fun NookastRoot(
     val queueState by queueViewModel.state.collectAsStateWithLifecycle()
     val playerSettingsViewModel: PlayerSettingsViewModel = viewModel()
     val playbackState by playbackViewModel.state.collectAsStateWithLifecycle()
+    // The source pill and card reach the player through this (DEC-069).
+    val sourceActions = remember(playbackViewModel) {
+        SourceActions(
+            runChecks = playbackViewModel::runExtendedDiagnostics,
+            quickCheck = playbackViewModel::quickCheck,
+            downloadToServer = playbackViewModel::downloadCurrentToServer,
+            setAlwaysViaServer = playbackViewModel::setAlwaysViaServer,
+        )
+    }
     val syncAccount: SyncAccountViewModel = viewModel()
     val listsViewModel: EpisodeListsViewModel = viewModel()
     val listsState by listsViewModel.state.collectAsStateWithLifecycle()
@@ -309,6 +318,8 @@ fun NookastRoot(
         displayPreferences.skyMorning,
         displayPreferences.skyWhiteNights,
         displayPreferences.skyEvening,
+        displayPreferences.skyMorningFromMinutes,
+        displayPreferences.skyEveningUntilMinutes,
         skyPlace,
     ) {
         while (true) {
@@ -322,6 +333,8 @@ fun NookastRoot(
                     morning = displayPreferences.skyMorning,
                     whiteNights = displayPreferences.skyWhiteNights,
                     evening = displayPreferences.skyEvening,
+                    morningFromHours = displayPreferences.skyMorningFromMinutes?.div(60.0),
+                    eveningUntilHours = displayPreferences.skyEveningUntilMinutes?.div(60.0),
                 )
             }
             kotlinx.coroutines.delay(60_000)
@@ -725,6 +738,7 @@ fun NookastRoot(
                             onMarkPodcastEpisodesUnplayedCommitted =
                                 queueViewModel::markEpisodesUnplayed,
                             onChangeFeedUrl = queueViewModel::changeFeedUrl,
+                            onRefreshPodcastFromFeed = queueViewModel::refreshPodcastFromFeed,
                             onUnsubscribePodcast = { podcastId ->
                                 queueViewModel.unsubscribePodcast(podcastId)
                                 navigator.popWhile { it is Route.Podcast }
@@ -926,12 +940,30 @@ fun NookastRoot(
                                 }
                             }
                         }
-                        val playLight = ru.e1173.nookast.designsystem.rememberPlayLight(shownState.isPlaying, shownState.isBuffering, voice = { voiceFactor.value })
+                        // DEC-069: the light takes the cover's colour; at the buffer line amber (3.2 s), nearly empty coral (2.4 s).
+                        val lightPalette = rememberConnectionPalette(shownState.artworkUrl)
+                        val runwayLine = shownState.runway
+                        val playLight = ru.e1173.nookast.designsystem.rememberPlayLight(
+                            shownState.isPlaying,
+                            shownState.isBuffering,
+                            voice = { voiceFactor.value },
+                            tint = when {
+                                runwayLine.shown && runwayLine.critical -> lightPalette.scene.bad
+                                runwayLine.shown -> lightPalette.warn
+                                else -> lightPalette.cover
+                            },
+                            alertBreathMs = when {
+                                !runwayLine.shown -> null
+                                runwayLine.critical -> 2_400
+                                else -> 3_200
+                            },
+                        )
                         androidx.compose.runtime.CompositionLocalProvider(
                             // A preview of another episode shows other artwork: no shared cover then (review of audit 4).
                             ru.e1173.nookast.designsystem.LocalCoverTransition provides ru.e1173.nookast.designsystem.NookCoverTransition(coverScope, this).takeIf { previewEntry == null },
                             ru.e1173.nookast.designsystem.LocalPlayerDismiss provides playerDismiss,
                             ru.e1173.nookast.designsystem.LocalPlayLight provides playLight,
+                            LocalSourceActions provides sourceActions,
                         ) {
                             NowPlayingScreen(
                                 playbackState = shownState,

@@ -375,6 +375,46 @@ class SyncRepository(
             log("queue.dead_letter", "${intents.size} intent(s) reason=$reason")
         }
 
+    /**
+     * PinePods 0.9.1+ merged duplicate episodes under new ids ([ServerEpisode.currentId]). Local
+     * intents keep their order and counters; only the ids change, so the next rebase matches the
+     * server queue instead of adding a twin or losing a removal. A progress row moves to the new id
+     * unless the new id has its own pending intent (both then deliver to the same server episode).
+     */
+    suspend fun remapEpisodeIds(aliases: Map<Int, Int>) = database.withTransaction {
+        val map = aliases.filter { (old, new) -> old > 0 && new > 0 && old != new }
+        if (map.isEmpty()) return@withTransaction
+        fun id(value: Int?) = value?.let { map[it] ?: it }
+        dao.queueIntents().forEach { entity ->
+            val snapshot = entity.clearSnapshotJson?.let { json ->
+                JSONArray(json).let { array -> JSONArray((0 until array.length()).map { map[array.getInt(it)] ?: array.getInt(it) }.distinct()) }.toString()
+            }
+            val mapped = entity.copy(
+                episodeId = id(entity.episodeId),
+                anchorEpisodeId = id(entity.anchorEpisodeId),
+                dependsOnEpisodeId = id(entity.dependsOnEpisodeId),
+                clearSnapshotJson = snapshot,
+            )
+            if (mapped != entity) dao.updateQueueIntent(mapped)
+        }
+        map.forEach { (old, new) ->
+            val previous = dao.progress(old) ?: return@forEach
+            val current = dao.progress(new)
+            // One row per server episode: the newer local intent wins (both dirty: higher counter),
+            // a pending intent beats a clean row, and the other row goes.
+            val keepPrevious = current == null ||
+                (previous.dirty && !current.dirty) ||
+                (previous.dirty && current.dirty && previous.intentCounter > current.intentCounter)
+            dao.deleteProgress(old)
+            if (keepPrevious) dao.upsertProgress(previous.copy(episodeId = new))
+        }
+        val state = queueDao.getQueueState()
+        if (state == null || state.serverKnown) {
+            queueDao.replaceQueue(QueueRebase.rebase(dao.serverQueue().map { it.episodeId }, queueIntents()).toQueueItems(clock.wallTimeMs()))
+        }
+        log("episode.merged", map.entries.joinToString(",") { "${it.key}->${it.value}" })
+    }
+
     /** Deletes intents compaction proved superseded (I2.2). */
     suspend fun dropQueueIntents(intents: List<QueueIntent>) {
         if (intents.isEmpty()) return
@@ -494,6 +534,8 @@ class SyncRepository(
             ),
         )
     }
+
+    suspend fun serverVersion(): String? = dao.serverSettings()?.serverVersion
 
     suspend fun deadLetterCount(): Int = dao.deadLetterRowCount()
 

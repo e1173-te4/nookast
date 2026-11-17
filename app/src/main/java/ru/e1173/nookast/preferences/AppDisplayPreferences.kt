@@ -53,6 +53,10 @@ enum class PodcastViewMode {
     }
 }
 
+/** The recommended clock of the skies (user, 14.11.2026): the morning from 6:00, the evening until 23:00. */
+const val DEFAULT_SKY_MORNING_FROM_MINUTES = 6 * 60
+const val DEFAULT_SKY_EVENING_UNTIL_MINUTES = 23 * 60
+
 data class DisplayPreferencesState(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val palette: ru.e1173.nookast.designsystem.ThemePalette = ru.e1173.nookast.designsystem.ThemePalette.SIGNATURE,
@@ -76,6 +80,13 @@ data class DisplayPreferencesState(
     val skyMorning: Boolean = true,
     val skyWhiteNights: Boolean = true,
     val skyEvening: Boolean = true,
+    /** The clock lengthening the morning and the evening into the dark (minutes of the day; null: by the sun only). */
+    val skyMorningFromMinutes: Int? = DEFAULT_SKY_MORNING_FROM_MINUTES,
+    val skyEveningUntilMinutes: Int? = DEFAULT_SKY_EVENING_UNTIL_MINUTES,
+    /** The story of the connection scheme (DEC-069): Settings → Appearance → «Схема связи». */
+    val connectionStory: String = "cosmos",
+    /** The scheme's first-open hint was closed: never shown again. */
+    val sourceIntroSeen: Boolean = false,
     /** Where the sky's sun is worked out (user, 2.11.2026): no place until the user lets the app read it. */
     val skyPlaceMode: SkyPlaceMode = SkyPlaceMode.OFF,
     val skyPlace: SkyPlace? = null,
@@ -197,6 +208,10 @@ private class AppDisplayPreferences(context: Context) {
             skyMorning = preferences.getBoolean(KEY_SKY_MORNING, preferences.getBoolean(KEY_SKY_MOODS, true)),
             skyWhiteNights = preferences.getBoolean(KEY_SKY_WHITE_NIGHTS, preferences.getBoolean(KEY_SKY_MOODS, true)),
             skyEvening = preferences.getBoolean(KEY_SKY_EVENING, preferences.getBoolean(KEY_SKY_MOODS, true)),
+            skyMorningFromMinutes = preferences.getInt(KEY_SKY_MORNING_FROM, DEFAULT_SKY_MORNING_FROM_MINUTES).takeIf { it >= 0 },
+            skyEveningUntilMinutes = preferences.getInt(KEY_SKY_EVENING_UNTIL, DEFAULT_SKY_EVENING_UNTIL_MINUTES).takeIf { it >= 0 },
+            connectionStory = preferences.getString(KEY_CONNECTION_STORY, null) ?: "cosmos",
+            sourceIntroSeen = preferences.getBoolean(KEY_SOURCE_INTRO_SEEN, false),
             skyPlaceMode = SkyPlaceMode.fromStoredValue(preferences.getString(KEY_SKY_PLACE_MODE, null)),
             skyPlace = if (preferences.contains(KEY_SKY_PLACE_LATITUDE) && preferences.contains(KEY_SKY_PLACE_LONGITUDE)) {
                 SkyPlace(
@@ -258,6 +273,24 @@ private class AppDisplayPreferences(context: Context) {
             ru.e1173.nookast.designsystem.SkyMood.NONE -> return
         }
         preferences.edit { putBoolean(key, enabled) }
+    }
+
+    /** The morning's start or the evening's end by the clock, in minutes of the day; null leaves it to the sun. */
+    fun setSkyClock(mood: ru.e1173.nookast.designsystem.SkyMood, minutes: Int?) {
+        val key = when (mood) {
+            ru.e1173.nookast.designsystem.SkyMood.MORNING -> KEY_SKY_MORNING_FROM
+            ru.e1173.nookast.designsystem.SkyMood.EVENING -> KEY_SKY_EVENING_UNTIL
+            else -> return
+        }
+        preferences.edit { putInt(key, minutes ?: SKY_BY_SUN) }
+    }
+
+    fun setConnectionStory(id: String) {
+        preferences.edit { putString(KEY_CONNECTION_STORY, id) }
+    }
+
+    fun setSourceIntroSeen() {
+        preferences.edit { putBoolean(KEY_SOURCE_INTRO_SEEN, true) }
     }
 
     fun setNewYearMode(mode: ru.e1173.nookast.designsystem.NewYearMode) {
@@ -339,6 +372,11 @@ private class AppDisplayPreferences(context: Context) {
         const val KEY_SKY_MORNING = "sky_morning"
         const val KEY_SKY_WHITE_NIGHTS = "sky_white_nights"
         const val KEY_SKY_EVENING = "sky_evening"
+        const val KEY_SKY_MORNING_FROM = "sky_morning_from"
+        const val KEY_SKY_EVENING_UNTIL = "sky_evening_until"
+        const val KEY_CONNECTION_STORY = "connection_story"
+        const val KEY_SOURCE_INTRO_SEEN = "source_intro_seen"
+        private const val SKY_BY_SUN = -1
         const val KEY_SKY_PLACE_MODE = "sky_place_mode"
         const val KEY_SKY_PLACE_LATITUDE = "sky_place_latitude"
         const val KEY_SKY_PLACE_LONGITUDE = "sky_place_longitude"
@@ -404,6 +442,21 @@ class AppPreferencesViewModel(application: Application) : AndroidViewModel(appli
 
     fun setSkyMood(mood: ru.e1173.nookast.designsystem.SkyMood, enabled: Boolean) {
         preferences.setSkyMood(mood, enabled)
+        _state.value = preferences.state
+    }
+
+    fun setSkyClock(mood: ru.e1173.nookast.designsystem.SkyMood, minutes: Int?) {
+        preferences.setSkyClock(mood, minutes)
+        _state.value = preferences.state
+    }
+
+    fun setConnectionStory(id: String) {
+        preferences.setConnectionStory(id)
+        _state.value = preferences.state
+    }
+
+    fun setSourceIntroSeen() {
+        preferences.setSourceIntroSeen()
         _state.value = preferences.state
     }
 
